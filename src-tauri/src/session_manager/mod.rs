@@ -354,7 +354,10 @@ mod tests {
 
         assert_eq!(yukino_sessions.len(), 1);
         assert_eq!(yukino_sessions[0].session_id, "yukino-session");
-        assert_eq!(yukino_sessions[0].title.as_deref(), Some("Show Yukino sessions"));
+        assert_eq!(
+            yukino_sessions[0].title.as_deref(),
+            Some("Show Yukino sessions")
+        );
         assert_eq!(
             std::path::Path::new(
                 yukino_sessions[0]

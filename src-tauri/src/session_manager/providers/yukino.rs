@@ -19,11 +19,5 @@ pub fn load_messages(path: &Path) -> Result<Vec<SessionMessage>, String> {
 }
 
 pub fn delete_session(_root: &Path, path: &Path, session_id: &str) -> Result<bool, String> {
-    codex::delete_session_for_provider(
-        path,
-        session_id,
-        PROVIDER_ID,
-        PROVIDER_LABEL,
-        RESUME_BINARY,
-    )
+    codex::delete_session_for_provider(path, session_id, PROVIDER_ID, PROVIDER_LABEL, RESUME_BINARY)
 }

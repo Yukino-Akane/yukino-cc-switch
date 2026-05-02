@@ -32,7 +32,7 @@ pub(crate) fn scan_sessions_from_root(
     resume_binary: &str,
 ) -> Vec<SessionMeta> {
     let mut files = Vec::new();
-    collect_jsonl_files(&root, &mut files);
+    collect_jsonl_files(root, &mut files);
 
     let mut sessions = Vec::new();
     for path in files {
@@ -146,6 +146,7 @@ pub(crate) fn delete_session_for_provider(
     Ok(true)
 }
 
+#[cfg(test)]
 fn parse_session(path: &Path) -> Option<SessionMeta> {
     parse_session_with_provider(path, PROVIDER_ID, "codex")
 }

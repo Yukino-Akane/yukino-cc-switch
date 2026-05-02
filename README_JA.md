@@ -1,17 +1,21 @@
 <div align="center">
 
-# CC Switch
+# Yukino CC Switch
 
-### Claude Code、Codex、Gemini CLI、OpenCode、OpenClaw のオールインワン管理ツール
+### Yukino 向け Claude Code、Codex、Gemini CLI、OpenCode、OpenClaw のオールインワン管理ツール
 
-[![Version](https://img.shields.io/github/v/release/farion1231/cc-switch?color=blue&label=version)](https://github.com/farion1231/cc-switch/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/farion1231/cc-switch/releases)
+[![Version](https://img.shields.io/github/v/release/Yukino-Akane/yukino-cc-switch?color=blue&label=version)](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/farion1231/cc-switch/total)](https://github.com/farion1231/cc-switch/releases/latest)
-
-<a href="https://trendshift.io/repositories/15372" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15372" alt="farion1231%2Fcc-switch | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+[![Downloads](https://img.shields.io/github/downloads/Yukino-Akane/yukino-cc-switch/total)](https://github.com/Yukino-Akane/yukino-cc-switch/releases/latest)
 
 [English](README.md) | [中文](README_ZH.md) | 日本語 | [Changelog](CHANGELOG.md)
+
+> **Yukino edition:** このリポジトリは
+> [farion1231/cc-switch](https://github.com/farion1231/cc-switch) を基にした Yukino 向け派生版です。
+> 同じ MIT License で配布し、元の著作権表示を保持します。Yukino provider、設定、ローカルプロキシ対応を追加し、
+> Yukino の実行状態は Codex の実行状態と分離します。初期の Yukino release は、
+> 専用インストーラーと updater artifacts が揃うまで source-only になる場合があります。
 
 </div>
 
@@ -271,6 +275,11 @@ CC Switch は「最小限の介入」という設計原則に従っています�
 
 ## ダウンロード & インストール
 
+> **Yukino edition releases:** Yukino ビルドは
+> [Yukino CC Switch Releases](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
+> で公開します。現在 `cc-switch` という名前の Homebrew/AUR パッケージは、
+> このリポジトリが明示的に Yukino パッケージを公開しない限り upstream CC Switch をインストールします。
+
 ### システム要件
 
 - **Windows**: Windows 10 以上
@@ -279,40 +288,21 @@ CC Switch は「最小限の介入」という設計原則に従っています�
 
 ### Windows ユーザー
 
-[Releases](../../releases) ページから最新版の `CC-Switch-v{version}-Windows.msi` インストーラー、またはポータブル版 `CC-Switch-v{version}-Windows-Portable.zip` をダウンロード。
+バイナリビルドが利用可能になったら、[Releases](../../releases) ページから最新版の `CC-Switch-v{version}-Windows.msi` インストーラー、またはポータブル版 `CC-Switch-v{version}-Windows-Portable.zip` をダウンロードしてください。
 
 ### macOS ユーザー
 
-**方法 1: Homebrew でインストール（推奨）**
+Yukino edition は現在 Homebrew cask を公開していません。macOS ビルドが利用可能になったら、[Releases](../../releases) から `CC-Switch-v{version}-macOS.zip` をダウンロードして展開してください。
 
-```bash
-brew tap farion1231/ccswitch
-brew install --cask cc-switch
-```
-
-アップデート:
-
-```bash
-brew upgrade --cask cc-switch
-```
-
-**方法 2: 手動ダウンロード**
-
-[Releases](../../releases) から `CC-Switch-v{version}-macOS.zip` をダウンロードして展開。
-
-> **注意**: 開発者アカウント未登録のため、初回起動時に「開発元を確認できません」と表示される場合があります。一度閉じてから「システム設定」→「プライバシーとセキュリティ」→「このまま開く」をクリックしてください。以降は通常通り起動できます。
+> **注意**: Yukino macOS ビルドの署名および notarization 状態は、各 release で個別に記載します。
 
 ### Arch Linux ユーザー
 
-**paru でインストール（推奨）**
-
-```bash
-paru -S cc-switch-bin
-```
+Yukino edition は現在 AUR パッケージを公開していません。upstream の `cc-switch-bin` パッケージは、この Yukino edition ではなく upstream CC Switch をインストールします。
 
 ### Linux ユーザー
 
-[Releases](../../releases) から最新版の Linux ビルドをダウンロード：
+バイナリビルドが利用可能になったら、[Releases](../../releases) から最新版の Linux ビルドをダウンロードしてください：
 
 - `CC-Switch-v{version}-Linux.deb`（Debian/Ubuntu）
 - `CC-Switch-v{version}-Linux.rpm`（Fedora/RHEL/openSUSE）
@@ -511,8 +501,8 @@ PR を送る前に以下をご確認ください：
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=farion1231/cc-switch&type=Date)](https://www.star-history.com/#farion1231/cc-switch&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Yukino-Akane/yukino-cc-switch&type=Date)](https://www.star-history.com/#Yukino-Akane/yukino-cc-switch&Date)
 
 ## ライセンス
 
-MIT © Jason Young
+MIT © Jason Young。Yukino modifications © Yukino contributors。

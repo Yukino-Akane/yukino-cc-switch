@@ -1,15 +1,13 @@
 <div align="center">
 
-# CC Switch
+# Yukino CC Switch
 
-### The All-in-One Manager for Claude Code, Codex, Gemini CLI, OpenCode & OpenClaw
+### Yukino-focused All-in-One Manager for Claude Code, Codex, Gemini CLI, OpenCode & OpenClaw
 
-[![Version](https://img.shields.io/github/v/release/farion1231/cc-switch?color=blue&label=version)](https://github.com/farion1231/cc-switch/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/farion1231/cc-switch/releases)
+[![Version](https://img.shields.io/github/v/release/Yukino-Akane/yukino-cc-switch?color=blue&label=version)](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/farion1231/cc-switch/total)](https://github.com/farion1231/cc-switch/releases/latest)
-
-<a href="https://trendshift.io/repositories/15372" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15372" alt="farion1231%2Fcc-switch | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+[![Downloads](https://img.shields.io/github/downloads/Yukino-Akane/yukino-cc-switch/total)](https://github.com/Yukino-Akane/yukino-cc-switch/releases/latest)
 
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [Changelog](CHANGELOG.md)
 
@@ -17,7 +15,8 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [Changelog](CHANG
 > [farion1231/cc-switch](https://github.com/farion1231/cc-switch), distributed
 > under the same MIT License with the original copyright notice preserved.
 > It adds Yukino provider, config, and local proxy support while keeping Yukino
-> runtime state separate from Codex state.
+> runtime state separate from Codex state. Early Yukino releases may be
+> source-only until dedicated installer and updater artifacts are published.
 
 </div>
 
@@ -277,6 +276,12 @@ For detailed guides on every feature, check out the **[User Manual](docs/user-ma
 
 ## Download & Installation
 
+> **Yukino edition releases:** Yukino builds are published from the
+> [Yukino CC Switch Releases](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
+> page. Homebrew and AUR packages named `cc-switch` currently install the
+> upstream CC Switch package unless this repository explicitly publishes a
+> Yukino package.
+
 ### System Requirements
 
 - **Windows**: Windows 10 and above
@@ -285,40 +290,21 @@ For detailed guides on every feature, check out the **[User Manual](docs/user-ma
 
 ### Windows Users
 
-Download the latest `CC-Switch-v{version}-Windows.msi` installer or `CC-Switch-v{version}-Windows-Portable.zip` portable version from the [Releases](../../releases) page.
+When binary builds are available, download the latest `CC-Switch-v{version}-Windows.msi` installer or `CC-Switch-v{version}-Windows-Portable.zip` portable version from the [Releases](../../releases) page.
 
 ### macOS Users
 
-**Method 1: Install via Homebrew (Recommended)**
+Yukino edition does not currently publish a Homebrew cask. When macOS builds are available, download `CC-Switch-v{version}-macOS.dmg` (recommended) or `.zip` from the [Releases](../../releases) page.
 
-```bash
-brew tap farion1231/ccswitch
-brew install --cask cc-switch
-```
-
-Update:
-
-```bash
-brew upgrade --cask cc-switch
-```
-
-**Method 2: Manual Download**
-
-Download `CC-Switch-v{version}-macOS.dmg` (recommended) or `.zip` from the [Releases](../../releases) page.
-
-> **Note**: CC Switch for macOS is code-signed and notarized by Apple. You can install and open it directly.
+> **Note**: Yukino macOS signing and notarization status will be documented on each release.
 
 ### Arch Linux Users
 
-**Install via paru (Recommended)**
-
-```bash
-paru -S cc-switch-bin
-```
+Yukino edition does not currently publish an AUR package. The upstream `cc-switch-bin` package installs upstream CC Switch, not this Yukino edition.
 
 ### Linux Users
 
-Download the latest Linux build from the [Releases](../../releases) page:
+When binary builds are available, download the latest Linux build from the [Releases](../../releases) page:
 
 - `CC-Switch-v{version}-Linux.deb` (Debian/Ubuntu)
 - `CC-Switch-v{version}-Linux.rpm` (Fedora/RHEL/openSUSE)
@@ -517,8 +503,8 @@ For new features, please open an issue for discussion before submitting a PR. PR
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=farion1231/cc-switch&type=Date)](https://www.star-history.com/#farion1231/cc-switch&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Yukino-Akane/yukino-cc-switch&type=Date)](https://www.star-history.com/#Yukino-Akane/yukino-cc-switch&Date)
 
 ## License
 
-MIT © Jason Young
+MIT © Jason Young. Yukino modifications © Yukino contributors.

@@ -1,17 +1,21 @@
 <div align="center">
 
-# CC Switch
+# Yukino CC Switch
 
-### Claude Code、Codex、Gemini CLI、OpenCode 和 OpenClaw 的全方位管理工具
+### 面向 Yukino 的 Claude Code、Codex、Gemini CLI、OpenCode 和 OpenClaw 全方位管理工具
 
-[![Version](https://img.shields.io/github/v/release/farion1231/cc-switch?color=blue&label=version)](https://github.com/farion1231/cc-switch/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/farion1231/cc-switch/releases)
+[![Version](https://img.shields.io/github/v/release/Yukino-Akane/yukino-cc-switch?color=blue&label=version)](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/Yukino-Akane/yukino-cc-switch/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/farion1231/cc-switch/total)](https://github.com/farion1231/cc-switch/releases/latest)
-
-<a href="https://trendshift.io/repositories/15372" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15372" alt="farion1231%2Fcc-switch | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+[![Downloads](https://img.shields.io/github/downloads/Yukino-Akane/yukino-cc-switch/total)](https://github.com/Yukino-Akane/yukino-cc-switch/releases/latest)
 
 [English](README.md) | 中文 | [日本語](README_JA.md) | [更新日志](CHANGELOG.md)
+
+> **Yukino edition：**本仓库是
+> [farion1231/cc-switch](https://github.com/farion1231/cc-switch) 的 Yukino 定制衍生版，
+> 继续使用 MIT License 并保留原始版权声明。它加入 Yukino provider、配置和本地代理支持，
+> 同时保持 Yukino 运行态与 Codex 运行态相互独立。早期 Yukino release 可能先以源码形式发布，
+> 后续再补齐专用安装包和 updater artifacts。
 
 </div>
 
@@ -272,6 +276,10 @@ CC Switch macOS 版本已通过 Apple 代码签名和公证，可直接下载安
 
 ## 下载安装
 
+> **Yukino edition release：**Yukino 构建会发布在
+> [Yukino CC Switch Releases](https://github.com/Yukino-Akane/yukino-cc-switch/releases)。
+> 目前名为 `cc-switch` 的 Homebrew/AUR 包仍安装上游 CC Switch，除非本仓库明确发布 Yukino 专用包。
+
 ### 系统要求
 
 - **Windows**：Windows 10 及以上
@@ -280,40 +288,21 @@ CC Switch macOS 版本已通过 Apple 代码签名和公证，可直接下载安
 
 ### Windows 用户
 
-从 [Releases](../../releases) 页面下载最新版本的 `CC-Switch-v{版本号}-Windows.msi` 安装包或 `CC-Switch-v{版本号}-Windows-Portable.zip` 绿色版。
+二进制构建可用后，可从 [Releases](../../releases) 页面下载最新版本的 `CC-Switch-v{版本号}-Windows.msi` 安装包或 `CC-Switch-v{版本号}-Windows-Portable.zip` 绿色版。
 
 ### macOS 用户
 
-**方式一：通过 Homebrew 安装（推荐）**
+Yukino edition 目前还没有发布 Homebrew cask。macOS 构建可用后，可从 [Releases](../../releases) 页面下载 `CC-Switch-v{版本号}-macOS.dmg`（推荐）或 `.zip`。
 
-```bash
-brew tap farion1231/ccswitch
-brew install --cask cc-switch
-```
-
-更新：
-
-```bash
-brew upgrade --cask cc-switch
-```
-
-**方式二：手动下载**
-
-从 [Releases](../../releases) 页面下载 `CC-Switch-v{版本号}-macOS.dmg`（推荐）或 `.zip`。
-
-> **注意**：CC Switch macOS 版本已通过 Apple 代码签名和公证，可直接安装打开。
+> **注意**：Yukino macOS 构建的签名和公证状态会在每次 release 中单独说明。
 
 ### Arch Linux 用户
 
-**通过 paru 安装（推荐）**
-
-```bash
-paru -S cc-switch-bin
-```
+Yukino edition 目前还没有发布 AUR 包。上游 `cc-switch-bin` 包安装的是上游 CC Switch，不是本 Yukino edition。
 
 ### Linux 用户
 
-从 [Releases](../../releases) 页面下载最新版本的 Linux 安装包：
+二进制构建可用后，可从 [Releases](../../releases) 页面下载最新版本的 Linux 安装包：
 
 - `CC-Switch-v{版本号}-Linux.deb`（Debian/Ubuntu）
 - `CC-Switch-v{版本号}-Linux.rpm`（Fedora/RHEL/openSUSE）
@@ -512,8 +501,8 @@ pnpm test:unit --coverage
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=farion1231/cc-switch&type=Date)](https://www.star-history.com/#farion1231/cc-switch&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Yukino-Akane/yukino-cc-switch&type=Date)](https://www.star-history.com/#Yukino-Akane/yukino-cc-switch&Date)
 
 ## License
 
-MIT © Jason Young
+MIT © Jason Young。Yukino 修改部分 © Yukino contributors。

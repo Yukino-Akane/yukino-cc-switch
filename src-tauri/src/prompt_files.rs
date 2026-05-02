@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::app_config::AppType;
-use crate::codex_config::get_codex_auth_path;
 use crate::config::get_claude_settings_path;
 use crate::error::AppError;
 use crate::gemini_config::get_gemini_dir;
@@ -12,18 +11,19 @@ use crate::opencode_config::get_opencode_dir;
 pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
     let base_dir: PathBuf = match app {
         AppType::Claude => get_base_dir_with_fallback(get_claude_settings_path(), ".claude")?,
-        AppType::Codex => get_base_dir_with_fallback(get_codex_auth_path(), ".codex")?,
+        AppType::Codex => get_codex_base_dir()?,
         AppType::Gemini => get_gemini_dir(),
         AppType::OpenCode => get_opencode_dir(),
         AppType::OpenClaw => get_openclaw_dir(),
         AppType::Hermes => crate::hermes_config::get_hermes_dir(),
+        AppType::Yukino => crate::yukino_config::get_yukino_dir(),
     };
 
     let filename = match app {
         AppType::Claude => "CLAUDE.md",
         AppType::Codex => "AGENTS.md",
         AppType::Gemini => "GEMINI.md",
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => "AGENTS.md",
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Yukino => "AGENTS.md",
     };
 
     Ok(base_dir.join(filename))
@@ -44,4 +44,8 @@ fn get_base_dir_with_fallback(
                 format!("Cannot determine {fallback_dir} config directory: user home not found"),
             )
         })
+}
+
+fn get_codex_base_dir() -> Result<PathBuf, AppError> {
+    get_base_dir_with_fallback(crate::codex_config::get_codex_auth_path(), ".codex")
 }

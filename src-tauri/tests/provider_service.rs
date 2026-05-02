@@ -164,6 +164,7 @@ command = "say"
                 gemini: false,
                 opencode: false,
                 hermes: false,
+                yukino: false,
             },
             description: None,
             homepage: None,
@@ -236,6 +237,141 @@ command = "say"
     assert_eq!(
         legacy_auth_value, "legacy-key",
         "previous provider should be backfilled with live auth"
+    );
+}
+
+#[test]
+fn provider_service_switch_yukino_writes_yukino_home_not_codex_home() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let home = ensure_test_home();
+
+    let mut config = MultiAppConfig::default();
+    {
+        let manager = config
+            .get_manager_mut(&AppType::Yukino)
+            .expect("yukino manager");
+        manager.providers.insert(
+            "yukino-custom".to_string(),
+            Provider::with_id(
+                "yukino-custom".to_string(),
+                "Yukino Custom".to_string(),
+                json!({
+                    "auth": {"OPENAI_API_KEY": "yukino-key"},
+                    "config": r#"model_provider = "custom"
+model = "gpt-5.5"
+
+[model_providers.custom]
+name = "custom"
+base_url = "https://api.yukino.example/v1"
+wire_api = "responses"
+requires_openai_auth = true
+"#
+                }),
+                None,
+            ),
+        );
+    }
+
+    let state = create_test_state_with_config(&config).expect("create test state");
+
+    ProviderService::switch(&state, AppType::Yukino, "yukino-custom")
+        .expect("switch Yukino provider should succeed");
+
+    let yukino_dir = home.join(".yukino");
+    assert!(
+        yukino_dir.join("auth.json").exists(),
+        "Yukino provider switch should write auth.json under {}",
+        yukino_dir.display()
+    );
+    assert!(
+        yukino_dir.join("config.toml").exists(),
+        "Yukino provider switch should write config.toml under {}",
+        yukino_dir.display()
+    );
+
+    let codex_dir = home.join(".codex");
+    assert!(
+        !codex_dir.join("auth.json").exists(),
+        "Yukino provider switch must not write Codex auth.json"
+    );
+    assert!(
+        !codex_dir.join("config.toml").exists(),
+        "Yukino provider switch must not write Codex config.toml"
+    );
+}
+
+#[test]
+fn provider_service_switch_yukino_preserves_existing_yukino_config_tables() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let home = ensure_test_home();
+
+    let yukino_dir = home.join(".yukino");
+    std::fs::create_dir_all(&yukino_dir).expect("create yukino dir");
+    std::fs::write(
+        yukino_dir.join("config.toml"),
+        r#"[features]
+apps = true
+
+[plugins."browser-use@yukino-curated"]
+enabled = true
+"#,
+    )
+    .expect("seed yukino config");
+
+    let mut config = MultiAppConfig::default();
+    {
+        let manager = config
+            .get_manager_mut(&AppType::Yukino)
+            .expect("yukino manager");
+        manager.providers.insert(
+            "yukino-custom".to_string(),
+            Provider::with_id(
+                "yukino-custom".to_string(),
+                "Yukino Custom".to_string(),
+                json!({
+                    "auth": {"OPENAI_API_KEY": "yukino-key"},
+                    "config": r#"model_provider = "custom"
+model = "gpt-5.5"
+
+[model_providers.custom]
+name = "custom"
+base_url = "https://api.yukino.example/v1"
+wire_api = "responses"
+requires_openai_auth = true
+"#
+                }),
+                None,
+            ),
+        );
+    }
+
+    let state = create_test_state_with_config(&config).expect("create test state");
+
+    ProviderService::switch(&state, AppType::Yukino, "yukino-custom")
+        .expect("switch Yukino provider should succeed");
+
+    let config_text =
+        std::fs::read_to_string(yukino_dir.join("config.toml")).expect("read yukino config");
+    let parsed: toml::Value = toml::from_str(&config_text).expect("parse yukino config");
+
+    assert_eq!(
+        parsed
+            .get("features")
+            .and_then(|v| v.get("apps"))
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "Yukino provider switch should preserve existing [features]"
+    );
+    assert_eq!(
+        parsed
+            .get("plugins")
+            .and_then(|v| v.get("browser-use@yukino-curated"))
+            .and_then(|v| v.get("enabled"))
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "Yukino provider switch should preserve existing [plugins.*]"
     );
 }
 

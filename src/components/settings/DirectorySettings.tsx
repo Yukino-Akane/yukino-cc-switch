@@ -18,6 +18,7 @@ interface DirectorySettingsProps {
   opencodeDir?: string;
   openclawDir?: string;
   hermesDir?: string;
+  yukinoDir?: string;
   onDirectoryChange: (app: AppId, value?: string) => void;
   onBrowseDirectory: (app: AppId) => Promise<void>;
   onResetDirectory: (app: AppId) => Promise<void>;
@@ -35,6 +36,7 @@ export function DirectorySettings({
   opencodeDir,
   openclawDir,
   hermesDir,
+  yukinoDir,
   onDirectoryChange,
   onBrowseDirectory,
   onResetDirectory,
@@ -155,6 +157,17 @@ export function DirectorySettings({
           onChange={(val) => onDirectoryChange("hermes", val)}
           onBrowse={() => onBrowseDirectory("hermes")}
           onReset={() => onResetDirectory("hermes")}
+        />
+
+        <DirectoryInput
+          label={t("settings.yukinoConfigDir")}
+          description={undefined}
+          value={yukinoDir}
+          resolvedValue={resolvedDirs.yukino}
+          placeholder={t("settings.browsePlaceholderYukino")}
+          onChange={(val) => onDirectoryChange("yukino", val)}
+          onBrowse={() => onBrowseDirectory("yukino")}
+          onReset={() => onResetDirectory("yukino")}
         />
       </section>
     </div>

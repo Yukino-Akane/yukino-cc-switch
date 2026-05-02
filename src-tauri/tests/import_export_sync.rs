@@ -140,6 +140,85 @@ fn sync_codex_provider_writes_auth_and_config() {
 }
 
 #[test]
+fn sync_yukino_provider_writes_yukino_home_not_codex_home() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let home = ensure_test_home();
+
+    let mut config = MultiAppConfig::default();
+    let provider_config = json!({
+        "auth": {
+            "OPENAI_API_KEY": "yukino-key"
+        },
+        "config": r#"model_provider = "custom"
+model = "gpt-5.5"
+
+[model_providers.custom]
+name = "custom"
+base_url = "https://api.yukino.example/v1"
+wire_api = "responses"
+requires_openai_auth = true
+"#
+    });
+
+    let provider = Provider::with_id(
+        "yukino-1".to_string(),
+        "Yukino Test".to_string(),
+        provider_config.clone(),
+        None,
+    );
+
+    let manager = config
+        .get_manager_mut(&AppType::Yukino)
+        .expect("yukino manager");
+    manager.providers.insert("yukino-1".to_string(), provider);
+    manager.current = "yukino-1".to_string();
+
+    ConfigService::sync_current_providers_to_live(&mut config).expect("sync yukino live");
+
+    let yukino_auth = home.join(".yukino").join("auth.json");
+    let yukino_config = home.join(".yukino").join("config.toml");
+    assert!(
+        yukino_auth.exists(),
+        "Yukino auth.json should exist at {}",
+        yukino_auth.display()
+    );
+    assert!(
+        yukino_config.exists(),
+        "Yukino config.toml should exist at {}",
+        yukino_config.display()
+    );
+    assert!(
+        !home.join(".codex").join("auth.json").exists(),
+        "Yukino sync must not write Codex auth.json"
+    );
+    assert!(
+        !home.join(".codex").join("config.toml").exists(),
+        "Yukino sync must not write Codex config.toml"
+    );
+
+    let auth_value: serde_json::Value = read_json_file(&yukino_auth).expect("read yukino auth");
+    assert_eq!(
+        auth_value,
+        provider_config.get("auth").cloned().expect("auth object")
+    );
+
+    let toml_text = fs::read_to_string(&yukino_config).expect("read yukino config.toml");
+    assert!(toml_text.contains("[model_providers.custom]"));
+
+    let manager = config
+        .get_manager(&AppType::Yukino)
+        .expect("yukino manager");
+    let synced = manager.providers.get("yukino-1").expect("yukino provider");
+    let synced_cfg = synced
+        .settings_config
+        .get("config")
+        .and_then(|v| v.as_str())
+        .expect("config string");
+    assert_eq!(synced_cfg, toml_text);
+}
+
+#[test]
 fn sync_codex_provider_preserves_live_model_provider_id_for_history() {
     let _guard = test_mutex().lock().expect("acquire test mutex");
     reset_test_fs();
@@ -642,6 +721,7 @@ command = "echo"
                 gemini: false,
                 opencode: false,
                 hermes: false,
+                yukino: false,
             },
             description: None,
             homepage: None,
@@ -771,6 +851,7 @@ fn import_from_claude_merges_into_config() {
                 gemini: false,
                 opencode: false,
                 hermes: false,
+                yukino: false,
             },
             description: None,
             homepage: None,

@@ -47,7 +47,6 @@ fn import_from_apps_respects_explicit_app_selection() {
     );
 
     let state = create_test_state().expect("create test state");
-
     let imported = SkillService::import_from_apps(
         &state.db,
         vec![ImportSkillSelection {

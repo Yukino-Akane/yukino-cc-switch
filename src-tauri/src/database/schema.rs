@@ -66,7 +66,7 @@ impl Database {
             description TEXT, homepage TEXT, docs TEXT, tags TEXT NOT NULL DEFAULT '[]',
             enabled_claude BOOLEAN NOT NULL DEFAULT 0, enabled_codex BOOLEAN NOT NULL DEFAULT 0,
             enabled_gemini BOOLEAN NOT NULL DEFAULT 0, enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
-            enabled_hermes BOOLEAN NOT NULL DEFAULT 0
+            enabled_hermes BOOLEAN NOT NULL DEFAULT 0, enabled_yukino BOOLEAN NOT NULL DEFAULT 0
         )",
             [],
         )
@@ -95,6 +95,7 @@ impl Database {
             enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
             enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
             enabled_hermes BOOLEAN NOT NULL DEFAULT 0,
+            enabled_yukino BOOLEAN NOT NULL DEFAULT 0,
             installed_at INTEGER NOT NULL DEFAULT 0,
             content_hash TEXT,
             updated_at INTEGER NOT NULL DEFAULT 0
@@ -122,7 +123,7 @@ impl Database {
 
         // 8. Proxy Config 表（三行结构，app_type 主键）
         conn.execute("CREATE TABLE IF NOT EXISTS proxy_config (
-            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini')),
+            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','yukino')),
             proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
             listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1,
             enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +170,7 @@ impl Database {
                 [],
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
+            Self::seed_yukino_proxy_config(conn)?;
         }
 
         // 9. Provider Health 表
@@ -430,6 +432,11 @@ impl Database {
                         log::info!("迁移数据库从 v9 到 v10（添加 Hermes Agent 支持）");
                         Self::migrate_v9_to_v10(conn)?;
                         Self::set_user_version(conn, 10)?;
+                    }
+                    10 => {
+                        log::info!("迁移数据库从 v10 到 v11（添加 Yukino 支持）");
+                        Self::migrate_v10_to_v11(conn)?;
+                        Self::set_user_version(conn, 11)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -743,12 +750,25 @@ impl Database {
                 old_cb.3,
                 old_cb.4,
             ),
+            (
+                "yukino",
+                false,
+                false,
+                3,
+                old_config.4,
+                old_config.5,
+                old_cb.0,
+                old_cb.1,
+                old_cb.2,
+                old_cb.3,
+                old_cb.4,
+            ),
         ];
 
         // 创建新表
         conn.execute("DROP TABLE IF EXISTS proxy_config_new", [])?;
         conn.execute("CREATE TABLE proxy_config_new (
-            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini')),
+            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','yukino')),
             proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
             listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1,
             enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
@@ -1197,6 +1217,203 @@ impl Database {
         }
 
         log::info!("v9 -> v10 迁移完成：已添加 Hermes Agent 支持");
+        Ok(())
+    }
+
+    /// v10 -> v11 迁移：添加 Yukino 支持
+    fn migrate_v10_to_v11(conn: &Connection) -> Result<(), AppError> {
+        Self::add_column_if_missing(
+            conn,
+            "mcp_servers",
+            "enabled_yukino",
+            "BOOLEAN NOT NULL DEFAULT 0",
+        )?;
+
+        if Self::table_exists(conn, "skills")? {
+            Self::add_column_if_missing(
+                conn,
+                "skills",
+                "enabled_yukino",
+                "BOOLEAN NOT NULL DEFAULT 0",
+            )?;
+        }
+
+        Self::ensure_proxy_config_allows_yukino(conn)?;
+        Self::seed_yukino_proxy_config(conn)?;
+
+        log::info!("v10 -> v11 迁移完成：已添加 Yukino 支持");
+        Ok(())
+    }
+
+    fn seed_yukino_proxy_config(conn: &Connection) -> Result<(), AppError> {
+        conn.execute(
+            "INSERT OR IGNORE INTO proxy_config (app_type, max_retries,
+            streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+            circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+            circuit_error_rate_threshold, circuit_min_requests)
+            VALUES ('yukino', 3, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    fn ensure_proxy_config_allows_yukino(conn: &Connection) -> Result<(), AppError> {
+        if !Self::table_exists(conn, "proxy_config")? {
+            conn.execute(
+                "CREATE TABLE proxy_config (
+                app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','yukino')),
+                proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
+                listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1,
+                enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
+                max_retries INTEGER NOT NULL DEFAULT 3, streaming_first_byte_timeout INTEGER NOT NULL DEFAULT 60,
+                streaming_idle_timeout INTEGER NOT NULL DEFAULT 120, non_streaming_timeout INTEGER NOT NULL DEFAULT 600,
+                circuit_failure_threshold INTEGER NOT NULL DEFAULT 4, circuit_success_threshold INTEGER NOT NULL DEFAULT 2,
+                circuit_timeout_seconds INTEGER NOT NULL DEFAULT 60, circuit_error_rate_threshold REAL NOT NULL DEFAULT 0.6,
+                circuit_min_requests INTEGER NOT NULL DEFAULT 10,
+                default_cost_multiplier TEXT NOT NULL DEFAULT '1',
+                pricing_model_source TEXT NOT NULL DEFAULT 'response',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+                [],
+            )
+            .map_err(|e| AppError::Database(format!("创建 proxy_config 表失败: {e}")))?;
+            Self::seed_base_proxy_config_rows(conn)?;
+            return Ok(());
+        }
+        if !Self::has_column(conn, "proxy_config", "app_type")? {
+            Self::migrate_proxy_config_to_per_app(conn)?;
+            return Ok(());
+        }
+
+        Self::ensure_proxy_config_copy_columns(conn)?;
+
+        conn.execute("DROP TABLE IF EXISTS proxy_config_new", [])
+            .map_err(|e| AppError::Database(format!("清理临时 proxy_config_new 失败: {e}")))?;
+        conn.execute(
+            "CREATE TABLE proxy_config_new (
+            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','yukino')),
+            proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
+            listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1,
+            enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
+            max_retries INTEGER NOT NULL DEFAULT 3, streaming_first_byte_timeout INTEGER NOT NULL DEFAULT 60,
+            streaming_idle_timeout INTEGER NOT NULL DEFAULT 120, non_streaming_timeout INTEGER NOT NULL DEFAULT 600,
+            circuit_failure_threshold INTEGER NOT NULL DEFAULT 4, circuit_success_threshold INTEGER NOT NULL DEFAULT 2,
+            circuit_timeout_seconds INTEGER NOT NULL DEFAULT 60, circuit_error_rate_threshold REAL NOT NULL DEFAULT 0.6,
+            circuit_min_requests INTEGER NOT NULL DEFAULT 10,
+            default_cost_multiplier TEXT NOT NULL DEFAULT '1',
+            pricing_model_source TEXT NOT NULL DEFAULT 'response',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("创建 proxy_config_new 失败: {e}")))?;
+
+        conn.execute(
+            "INSERT INTO proxy_config_new (
+                app_type, proxy_enabled, listen_address, listen_port, enable_logging,
+                enabled, auto_failover_enabled, max_retries, streaming_first_byte_timeout,
+                streaming_idle_timeout, non_streaming_timeout, circuit_failure_threshold,
+                circuit_success_threshold, circuit_timeout_seconds, circuit_error_rate_threshold,
+                circuit_min_requests, default_cost_multiplier, pricing_model_source, created_at,
+                updated_at
+             )
+             SELECT
+                app_type,
+                COALESCE(proxy_enabled, 0),
+                COALESCE(listen_address, '127.0.0.1'),
+                COALESCE(listen_port, 15721),
+                COALESCE(enable_logging, 1),
+                COALESCE(enabled, 0),
+                COALESCE(auto_failover_enabled, 0),
+                COALESCE(max_retries, 3),
+                COALESCE(streaming_first_byte_timeout, 60),
+                COALESCE(streaming_idle_timeout, 120),
+                COALESCE(non_streaming_timeout, 600),
+                COALESCE(circuit_failure_threshold, 4),
+                COALESCE(circuit_success_threshold, 2),
+                COALESCE(circuit_timeout_seconds, 60),
+                COALESCE(circuit_error_rate_threshold, 0.6),
+                COALESCE(circuit_min_requests, 10),
+                COALESCE(default_cost_multiplier, '1'),
+                COALESCE(pricing_model_source, 'response'),
+                COALESCE(NULLIF(created_at, ''), datetime('now')),
+                COALESCE(NULLIF(updated_at, ''), datetime('now'))
+             FROM proxy_config
+             WHERE app_type IN ('claude','codex','gemini','yukino')",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("复制 proxy_config 数据失败: {e}")))?;
+
+        conn.execute("DROP TABLE proxy_config", [])
+            .map_err(|e| AppError::Database(format!("删除旧 proxy_config 失败: {e}")))?;
+        conn.execute("ALTER TABLE proxy_config_new RENAME TO proxy_config", [])
+            .map_err(|e| AppError::Database(format!("替换 proxy_config 表失败: {e}")))?;
+
+        Ok(())
+    }
+
+    fn ensure_proxy_config_copy_columns(conn: &Connection) -> Result<(), AppError> {
+        let columns = [
+            ("proxy_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("listen_address", "TEXT NOT NULL DEFAULT '127.0.0.1'"),
+            ("listen_port", "INTEGER NOT NULL DEFAULT 15721"),
+            ("enable_logging", "INTEGER NOT NULL DEFAULT 1"),
+            ("enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("auto_failover_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("max_retries", "INTEGER NOT NULL DEFAULT 3"),
+            (
+                "streaming_first_byte_timeout",
+                "INTEGER NOT NULL DEFAULT 60",
+            ),
+            ("streaming_idle_timeout", "INTEGER NOT NULL DEFAULT 120"),
+            ("non_streaming_timeout", "INTEGER NOT NULL DEFAULT 600"),
+            ("circuit_failure_threshold", "INTEGER NOT NULL DEFAULT 4"),
+            ("circuit_success_threshold", "INTEGER NOT NULL DEFAULT 2"),
+            ("circuit_timeout_seconds", "INTEGER NOT NULL DEFAULT 60"),
+            ("circuit_error_rate_threshold", "REAL NOT NULL DEFAULT 0.6"),
+            ("circuit_min_requests", "INTEGER NOT NULL DEFAULT 10"),
+            ("default_cost_multiplier", "TEXT NOT NULL DEFAULT '1'"),
+            ("pricing_model_source", "TEXT NOT NULL DEFAULT 'response'"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+        ];
+
+        for (column, definition) in columns {
+            Self::add_column_if_missing(conn, "proxy_config", column, definition)?;
+        }
+
+        Ok(())
+    }
+
+    fn seed_base_proxy_config_rows(conn: &Connection) -> Result<(), AppError> {
+        conn.execute(
+            "INSERT OR IGNORE INTO proxy_config (app_type, max_retries,
+            streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+            circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+            circuit_error_rate_threshold, circuit_min_requests)
+            VALUES ('claude', 6, 90, 180, 600, 8, 3, 90, 0.7, 15)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO proxy_config (app_type, max_retries,
+            streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+            circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+            circuit_error_rate_threshold, circuit_min_requests)
+            VALUES ('codex', 3, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO proxy_config (app_type, max_retries,
+            streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+            circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+            circuit_error_rate_threshold, circuit_min_requests)
+            VALUES ('gemini', 5, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
         Ok(())
     }
 

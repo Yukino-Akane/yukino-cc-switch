@@ -1,6 +1,9 @@
+use serde_json::json;
+
 use cc_switch_lib::{
     get_default_cost_multiplier_test_hook, get_pricing_model_source_test_hook,
-    set_default_cost_multiplier_test_hook, set_pricing_model_source_test_hook, AppError,
+    set_default_cost_multiplier_test_hook, set_pricing_model_source_test_hook, AppError, AppType,
+    Provider, ProviderService,
 };
 
 #[path = "support.rs"]
@@ -75,4 +78,76 @@ async fn pricing_model_source_commands_round_trip() {
         }
         other => panic!("expected localized error, got {other:?}"),
     }
+}
+
+// 测试使用 Mutex 进行串行化，跨 await 持锁是预期行为
+#[allow(clippy::await_holding_lock)]
+#[tokio::test]
+async fn yukino_proxy_takeover_writes_yukino_live_not_codex_live() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let home = ensure_test_home();
+
+    let state = create_test_state().expect("create test state");
+    let provider = Provider::with_id(
+        "yukino-proxy".to_string(),
+        "Yukino Proxy".to_string(),
+        json!({
+            "auth": {"OPENAI_API_KEY": "yukino-key"},
+            "config": r#"model_provider = "custom"
+model = "gpt-5.5"
+
+[model_providers.custom]
+name = "custom"
+base_url = "https://api.yukino.example/v1"
+wire_api = "responses"
+requires_openai_auth = true
+"#
+        }),
+        None,
+    );
+
+    ProviderService::add(&state, AppType::Yukino, provider, false).expect("add Yukino provider");
+    ProviderService::switch(&state, AppType::Yukino, "yukino-proxy")
+        .expect("switch Yukino provider");
+
+    state
+        .proxy_service
+        .set_takeover_for_app("yukino", true)
+        .await
+        .expect("enable Yukino takeover");
+
+    let yukino_auth = home.join(".yukino").join("auth.json");
+    let yukino_config = home.join(".yukino").join("config.toml");
+    let auth_value: serde_json::Value =
+        cc_switch_lib::read_json_file(&yukino_auth).expect("read Yukino auth after takeover");
+    assert_eq!(
+        auth_value
+            .get("OPENAI_API_KEY")
+            .and_then(|value| value.as_str()),
+        Some("PROXY_MANAGED"),
+        "Yukino takeover should replace the Yukino live token with the proxy placeholder"
+    );
+
+    let config_text = std::fs::read_to_string(&yukino_config).expect("read Yukino config");
+    assert!(
+        config_text.contains("http://127.0.0.1:"),
+        "Yukino takeover should point .yukino/config.toml at the local proxy"
+    );
+
+    assert!(
+        !home.join(".codex").join("auth.json").exists(),
+        "Yukino proxy takeover must not write Codex auth.json"
+    );
+    assert!(
+        !home.join(".codex").join("config.toml").exists(),
+        "Yukino proxy takeover must not write Codex config.toml"
+    );
+
+    let status = state
+        .proxy_service
+        .get_takeover_status()
+        .await
+        .expect("read takeover status");
+    assert!(status.yukino, "Yukino takeover status should be true");
 }

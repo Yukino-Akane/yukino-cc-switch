@@ -67,6 +67,7 @@ const createDefaultProviders = (): ProvidersByApp => ({
   opencode: {},
   openclaw: {},
   hermes: {},
+  yukino: {},
 });
 
 const createDefaultCurrent = (): CurrentProviderState => ({
@@ -76,6 +77,7 @@ const createDefaultCurrent = (): CurrentProviderState => ({
   opencode: "",
   openclaw: "",
   hermes: "",
+  yukino: "",
 });
 
 let providers = createDefaultProviders();
@@ -157,6 +159,7 @@ let mcpConfigs: McpConfigState = {
         opencode: false,
         openclaw: false,
         hermes: false,
+        yukino: false,
       },
       server: {
         type: "stdio",
@@ -176,6 +179,7 @@ let mcpConfigs: McpConfigState = {
         opencode: false,
         openclaw: false,
         hermes: false,
+        yukino: false,
       },
       server: {
         type: "http",
@@ -187,6 +191,7 @@ let mcpConfigs: McpConfigState = {
   opencode: {},
   openclaw: {},
   hermes: {},
+  yukino: {},
 };
 
 const cloneProviders = (value: ProvidersByApp) =>
@@ -224,6 +229,7 @@ export const resetProviderState = () => {
           opencode: false,
           openclaw: false,
           hermes: false,
+          yukino: false,
         },
         server: {
           type: "stdio",
@@ -243,6 +249,7 @@ export const resetProviderState = () => {
           opencode: false,
           openclaw: false,
           hermes: false,
+          yukino: false,
         },
         server: {
           type: "http",
@@ -254,6 +261,7 @@ export const resetProviderState = () => {
     opencode: {},
     openclaw: {},
     hermes: {},
+    yukino: {},
   };
 };
 

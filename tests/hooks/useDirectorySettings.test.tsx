@@ -70,7 +70,8 @@ describe("useDirectorySettings", () => {
       if (app === "gemini") return "/remote/gemini";
       if (app === "opencode") return "/remote/opencode";
       if (app === "openclaw") return "/remote/openclaw";
-      return "/remote/hermes";
+      if (app === "hermes") return "/remote/hermes";
+      return "/remote/yukino";
     });
     selectConfigDirectoryMock.mockReset();
   });
@@ -93,6 +94,7 @@ describe("useDirectorySettings", () => {
       opencode: "/remote/opencode",
       openclaw: "/remote/openclaw",
       hermes: "/remote/hermes",
+      yukino: "/remote/yukino",
     });
   });
 
@@ -215,6 +217,29 @@ describe("useDirectorySettings", () => {
     expect(result.current.resolvedDirs.appConfig).toBe("/home/mock/.cc-switch");
   });
 
+  it("updates yukino directory when browsing succeeds", async () => {
+    selectConfigDirectoryMock.mockResolvedValue("/picked/yukino");
+
+    const { result } = renderHook(() =>
+      useDirectorySettings({
+        settings: createSettings({ yukinoConfigDir: undefined }),
+        onUpdateSettings,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.browseDirectory("yukino");
+    });
+
+    expect(selectConfigDirectoryMock).toHaveBeenCalledWith("/remote/yukino");
+    expect(onUpdateSettings).toHaveBeenCalledWith({
+      yukinoConfigDir: "/picked/yukino",
+    });
+    expect(result.current.resolvedDirs.yukino).toBe("/picked/yukino");
+  });
+
   it("updates openclaw directory when browsing succeeds", async () => {
     selectConfigDirectoryMock.mockResolvedValue("/picked/openclaw");
 
@@ -251,6 +276,7 @@ describe("useDirectorySettings", () => {
         gemini: "/server/gemini",
         opencode: "/server/opencode",
         openclaw: "/server/openclaw",
+        yukino: "/server/yukino",
       });
     });
 
@@ -259,5 +285,6 @@ describe("useDirectorySettings", () => {
     expect(result.current.resolvedDirs.gemini).toBe("/server/gemini");
     expect(result.current.resolvedDirs.opencode).toBe("/server/opencode");
     expect(result.current.resolvedDirs.openclaw).toBe("/server/openclaw");
+    expect(result.current.resolvedDirs.yukino).toBe("/server/yukino");
   });
 });

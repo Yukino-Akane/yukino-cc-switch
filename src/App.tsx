@@ -122,6 +122,7 @@ const VALID_APPS: AppId[] = [
   "opencode",
   "openclaw",
   "hermes",
+  "yukino",
 ];
 
 const getInitialApp = (): AppId => {
@@ -184,6 +185,7 @@ function App() {
     opencode: true,
     openclaw: true,
     hermes: true,
+    yukino: true,
   };
 
   const getFirstVisibleApp = (): AppId => {
@@ -193,6 +195,7 @@ function App() {
     if (visibleApps.opencode) return "opencode";
     if (visibleApps.openclaw) return "openclaw";
     if (visibleApps.hermes) return "hermes";
+    if (visibleApps.yukino) return "yukino";
     return "claude"; // fallback
   };
 
@@ -211,7 +214,8 @@ function App() {
       activeApp !== "opencode" &&
       activeApp !== "openclaw" &&
       activeApp !== "gemini" &&
-      activeApp !== "hermes"
+      activeApp !== "hermes" &&
+      activeApp !== "yukino"
     ) {
       setCurrentView("providers");
     }
@@ -276,7 +280,8 @@ function App() {
     activeApp === "opencode" ||
     activeApp === "openclaw" ||
     activeApp === "gemini" ||
-    activeApp === "hermes";
+    activeApp === "hermes" ||
+    activeApp === "yukino";
 
   const {
     addProvider,

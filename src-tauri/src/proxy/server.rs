@@ -299,11 +299,19 @@ impl ProxyServer {
                 "/codex/v1/chat/completions",
                 post(handlers::handle_chat_completions),
             )
+            .route(
+                "/yukino/v1/chat/completions",
+                post(handlers::handle_yukino_chat_completions),
+            )
             // OpenAI Responses API (Codex CLI，支持带前缀和不带前缀)
             .route("/responses", post(handlers::handle_responses))
             .route("/v1/responses", post(handlers::handle_responses))
             .route("/v1/v1/responses", post(handlers::handle_responses))
             .route("/codex/v1/responses", post(handlers::handle_responses))
+            .route(
+                "/yukino/v1/responses",
+                post(handlers::handle_yukino_responses),
+            )
             // OpenAI Responses Compact API (Codex CLI 远程压缩，透传)
             .route(
                 "/responses/compact",
@@ -320,6 +328,10 @@ impl ProxyServer {
             .route(
                 "/codex/v1/responses/compact",
                 post(handlers::handle_responses_compact),
+            )
+            .route(
+                "/yukino/v1/responses/compact",
+                post(handlers::handle_yukino_responses_compact),
             )
             // Gemini API (支持带前缀和不带前缀)
             .route("/v1beta/*path", post(handlers::handle_gemini))
@@ -350,5 +362,36 @@ impl ProxyServer {
             .provider_router
             .reset_provider_breaker(provider_id, app_type)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::Database;
+    use axum::body::Body;
+    use http::{Request, StatusCode};
+
+    #[tokio::test]
+    async fn router_accepts_yukino_responses_route() {
+        let db = Arc::new(Database::memory().expect("create memory db"));
+        let server = ProxyServer::new(ProxyConfig::default(), db, None);
+        let mut router = server.build_router();
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/yukino/v1/responses")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"model":"gpt-5","input":"hi"}"#))
+            .expect("build request");
+
+        let response = <Router as tower::Service<Request<Body>>>::call(&mut router, request).await;
+        let status = response.expect("router response").status();
+
+        assert_ne!(
+            status,
+            StatusCode::NOT_FOUND,
+            "Yukino Responses route should be registered"
+        );
     }
 }

@@ -68,6 +68,7 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
     opencode: boolean;
     openclaw: boolean;
     hermes: boolean;
+    yukino: boolean;
   }>(() => {
     if (initialData?.apps) {
       return { ...initialData.apps };
@@ -79,6 +80,7 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
       opencode: defaultEnabledApps.includes("opencode"),
       openclaw: defaultEnabledApps.includes("openclaw"),
       hermes: defaultEnabledApps.includes("hermes"),
+      yukino: defaultEnabledApps.includes("yukino"),
     };
   });
 
@@ -595,6 +597,22 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
                     className="text-sm text-foreground cursor-pointer select-none"
                   >
                     {t("mcp.unifiedPanel.apps.hermes")}
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="enable-yukino"
+                    checked={enabledApps.yukino}
+                    onCheckedChange={(checked: boolean) =>
+                      setEnabledApps({ ...enabledApps, yukino: checked })
+                    }
+                  />
+                  <label
+                    htmlFor="enable-yukino"
+                    className="text-sm text-foreground cursor-pointer select-none"
+                  >
+                    {t("mcp.unifiedPanel.apps.yukino")}
                   </label>
                 </div>
               </div>

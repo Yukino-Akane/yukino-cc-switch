@@ -13,6 +13,28 @@ use toml_edit::DocumentMut;
 
 pub const CC_SWITCH_CODEX_MODEL_PROVIDER_ID: &str = "ccswitch";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexLikeApp {
+    Codex,
+    Yukino,
+}
+
+impl CodexLikeApp {
+    pub fn app_type(self) -> crate::app_config::AppType {
+        match self {
+            Self::Codex => crate::app_config::AppType::Codex,
+            Self::Yukino => crate::app_config::AppType::Yukino,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Codex => "Codex",
+            Self::Yukino => "Yukino",
+        }
+    }
+}
+
 /// Reserved built-in provider IDs from OpenAI Codex's config/model-provider
 /// catalog. Keep in sync with Codex `RESERVED_MODEL_PROVIDER_IDS` and legacy
 /// removed provider aliases.
@@ -25,23 +47,55 @@ const CODEX_RESERVED_MODEL_PROVIDER_IDS: &[&str] = &[
     "ollama-chat",
 ];
 
+const CODEX_LIKE_PRESERVED_TABLES: &[&str] = &[
+    "features",
+    "memories",
+    "projects",
+    "marketplaces",
+    "plugins",
+    "skills",
+    "windows",
+    "mcp_servers",
+];
+
 /// 获取 Codex 配置目录路径
 pub fn get_codex_config_dir() -> PathBuf {
-    if let Some(custom) = crate::settings::get_codex_override_dir() {
-        return custom;
-    }
-
-    get_home_dir().join(".codex")
+    get_codex_like_config_dir(CodexLikeApp::Codex)
 }
 
 /// 获取 Codex auth.json 路径
 pub fn get_codex_auth_path() -> PathBuf {
-    get_codex_config_dir().join("auth.json")
+    get_codex_like_auth_path(CodexLikeApp::Codex)
 }
 
 /// 获取 Codex config.toml 路径
 pub fn get_codex_config_path() -> PathBuf {
-    get_codex_config_dir().join("config.toml")
+    get_codex_like_config_path(CodexLikeApp::Codex)
+}
+
+pub fn get_codex_like_config_dir(app: CodexLikeApp) -> PathBuf {
+    match app {
+        CodexLikeApp::Codex => {
+            if let Some(custom) = crate::settings::get_codex_override_dir() {
+                return custom;
+            }
+            get_home_dir().join(".codex")
+        }
+        CodexLikeApp::Yukino => {
+            if let Some(custom) = crate::settings::get_yukino_override_dir() {
+                return custom;
+            }
+            get_home_dir().join(".yukino")
+        }
+    }
+}
+
+pub fn get_codex_like_auth_path(app: CodexLikeApp) -> PathBuf {
+    get_codex_like_config_dir(app).join("auth.json")
+}
+
+pub fn get_codex_like_config_path(app: CodexLikeApp) -> PathBuf {
+    get_codex_like_config_dir(app).join("config.toml")
 }
 
 /// 获取 Codex 供应商配置文件路径
@@ -79,8 +133,16 @@ pub fn write_codex_live_atomic(
     auth: &Value,
     config_text_opt: Option<&str>,
 ) -> Result<(), AppError> {
-    let auth_path = get_codex_auth_path();
-    let config_path = get_codex_config_path();
+    write_codex_like_live_atomic(CodexLikeApp::Codex, auth, config_text_opt)
+}
+
+pub fn write_codex_like_live_atomic(
+    app: CodexLikeApp,
+    auth: &Value,
+    config_text_opt: Option<&str>,
+) -> Result<(), AppError> {
+    let auth_path = get_codex_like_auth_path(app);
+    let config_path = get_codex_like_config_path(app);
 
     if let Some(parent) = auth_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
@@ -124,14 +186,18 @@ pub fn write_codex_live_atomic(
     Ok(())
 }
 
-/// 读取 `~/.codex/config.toml`，若不存在返回空字符串
-pub fn read_codex_config_text() -> Result<String, AppError> {
-    let path = get_codex_config_path();
+pub fn read_codex_like_config_text(app: CodexLikeApp) -> Result<String, AppError> {
+    let path = get_codex_like_config_path(app);
     if path.exists() {
         std::fs::read_to_string(&path).map_err(|e| AppError::io(&path, e))
     } else {
         Ok(String::new())
     }
+}
+
+/// 读取 `~/.codex/config.toml`，若不存在返回空字符串
+pub fn read_codex_config_text() -> Result<String, AppError> {
+    read_codex_like_config_text(CodexLikeApp::Codex)
 }
 
 /// 对非空的 TOML 文本进行语法校验
@@ -146,7 +212,11 @@ pub fn validate_config_toml(text: &str) -> Result<(), AppError> {
 
 /// 读取并校验 `~/.codex/config.toml`，返回文本（可能为空）
 pub fn read_and_validate_codex_config_text() -> Result<String, AppError> {
-    let s = read_codex_config_text()?;
+    read_and_validate_codex_like_config_text(CodexLikeApp::Codex)
+}
+
+pub fn read_and_validate_codex_like_config_text(app: CodexLikeApp) -> Result<String, AppError> {
+    let s = read_codex_like_config_text(app)?;
     validate_config_toml(&s)?;
     Ok(s)
 }
@@ -296,6 +366,18 @@ pub fn normalize_codex_settings_config_model_provider(
     settings: &mut Value,
     anchor_config_text: Option<&str>,
 ) -> Result<(), AppError> {
+    normalize_codex_like_settings_config_model_provider(
+        CodexLikeApp::Codex,
+        settings,
+        anchor_config_text,
+    )
+}
+
+pub fn normalize_codex_like_settings_config_model_provider(
+    app: CodexLikeApp,
+    settings: &mut Value,
+    anchor_config_text: Option<&str>,
+) -> Result<(), AppError> {
     let Some(config_text) = settings
         .get("config")
         .and_then(|value| value.as_str())
@@ -304,7 +386,7 @@ pub fn normalize_codex_settings_config_model_provider(
         return Ok(());
     };
 
-    let current_config_text = read_codex_config_text().ok();
+    let current_config_text = read_codex_like_config_text(app).ok();
     let anchors = anchor_config_text
         .into_iter()
         .chain(current_config_text.as_deref());
@@ -316,6 +398,37 @@ pub fn normalize_codex_settings_config_model_provider(
     }
 
     Ok(())
+}
+
+fn preserve_existing_codex_like_tables(
+    app: CodexLikeApp,
+    config_text: &str,
+) -> Result<String, AppError> {
+    let existing_config = read_codex_like_config_text(app).unwrap_or_default();
+    if existing_config.trim().is_empty() {
+        return Ok(config_text.to_string());
+    }
+
+    let existing_doc = existing_config
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid {} config.toml: {e}", app.label())))?;
+    let mut target_doc = if config_text.trim().is_empty() {
+        DocumentMut::new()
+    } else {
+        config_text
+            .parse::<DocumentMut>()
+            .map_err(|e| AppError::Message(format!("Invalid {} config.toml: {e}", app.label())))?
+    };
+
+    for table_name in CODEX_LIKE_PRESERVED_TABLES {
+        if target_doc.get(table_name).is_none() {
+            if let Some(existing_item) = existing_doc.get(table_name) {
+                target_doc[table_name] = existing_item.clone();
+            }
+        }
+    }
+
+    Ok(target_doc.to_string())
 }
 
 fn restore_codex_backfill_model_provider_id(
@@ -397,19 +510,31 @@ pub fn write_codex_live_atomic_with_stable_provider(
     auth: &Value,
     config_text_opt: Option<&str>,
 ) -> Result<(), AppError> {
+    write_codex_like_live_atomic_with_stable_provider(CodexLikeApp::Codex, auth, config_text_opt)
+}
+
+pub fn write_codex_like_live_atomic_with_stable_provider(
+    app: CodexLikeApp,
+    auth: &Value,
+    config_text_opt: Option<&str>,
+) -> Result<(), AppError> {
     match config_text_opt {
         Some(config_text) => {
             let mut settings = serde_json::Map::new();
             settings.insert("config".to_string(), Value::String(config_text.to_string()));
             let mut settings = Value::Object(settings);
-            normalize_codex_settings_config_model_provider(&mut settings, None)?;
+            normalize_codex_like_settings_config_model_provider(app, &mut settings, None)?;
             let config_text = settings
                 .get("config")
                 .and_then(|value| value.as_str())
                 .unwrap_or(config_text);
-            write_codex_live_atomic(auth, Some(config_text))
+            let config_text = preserve_existing_codex_like_tables(app, config_text)?;
+            write_codex_like_live_atomic(app, auth, Some(&config_text))
         }
-        None => write_codex_live_atomic(auth, None),
+        None => {
+            let config_text = preserve_existing_codex_like_tables(app, "")?;
+            write_codex_like_live_atomic(app, auth, Some(&config_text))
+        }
     }
 }
 
@@ -529,6 +654,25 @@ pub fn remove_codex_toml_base_url_if(toml_str: &str, predicate: impl Fn(&str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_like_app_defaults_to_separate_home_dirs() {
+        let home = crate::config::get_home_dir();
+        assert_eq!(
+            get_codex_like_config_dir(CodexLikeApp::Codex),
+            home.join(".codex")
+        );
+        assert_eq!(
+            get_codex_like_config_dir(CodexLikeApp::Yukino),
+            home.join(".yukino")
+        );
+    }
+
+    #[test]
+    fn codex_like_paths_use_requested_home() {
+        assert!(get_codex_like_auth_path(CodexLikeApp::Yukino).ends_with(".yukino/auth.json"));
+        assert!(get_codex_like_config_path(CodexLikeApp::Yukino).ends_with(".yukino/config.toml"));
+    }
 
     #[test]
     fn normalize_live_config_preserves_current_custom_model_provider_id() {

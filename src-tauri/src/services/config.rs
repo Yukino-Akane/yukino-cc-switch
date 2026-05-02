@@ -1,5 +1,6 @@
 use super::provider::{sanitize_claude_settings_for_live, ProviderService};
 use crate::app_config::{AppType, MultiAppConfig};
+use crate::codex_config::CodexLikeApp;
 use crate::error::AppError;
 use crate::provider::Provider;
 use chrono::Utc;
@@ -88,6 +89,7 @@ impl ConfigService {
         Self::sync_current_provider_for_app(config, &AppType::Claude)?;
         Self::sync_current_provider_for_app(config, &AppType::Codex)?;
         Self::sync_current_provider_for_app(config, &AppType::Gemini)?;
+        Self::sync_current_provider_for_app(config, &AppType::Yukino)?;
         Ok(())
     }
 
@@ -119,7 +121,9 @@ impl ConfigService {
         };
 
         match app_type {
-            AppType::Codex => Self::sync_codex_live(config, &current_id, &provider)?,
+            AppType::Codex | AppType::Yukino => {
+                Self::sync_codex_like_live(config, app_type, &current_id, &provider)?
+            }
             AppType::Claude => Self::sync_claude_live(config, &current_id, &provider)?,
             AppType::Gemini => Self::sync_gemini_live(config, &current_id, &provider)?,
             AppType::OpenCode => {
@@ -138,31 +142,43 @@ impl ConfigService {
         Ok(())
     }
 
-    fn sync_codex_live(
+    fn sync_codex_like_live(
         config: &mut MultiAppConfig,
+        app_type: &AppType,
         provider_id: &str,
         provider: &Provider,
     ) -> Result<(), AppError> {
+        let codex_like = match app_type {
+            AppType::Codex => CodexLikeApp::Codex,
+            AppType::Yukino => CodexLikeApp::Yukino,
+            _ => unreachable!("sync_codex_like_live is only for Codex-compatible apps"),
+        };
+        let label = codex_like.label();
         let settings = provider.settings_config.as_object().ok_or_else(|| {
-            AppError::Config(format!("供应商 {provider_id} 的 Codex 配置必须是对象"))
+            AppError::Config(format!("供应商 {provider_id} 的 {label} 配置必须是对象"))
         })?;
         let auth = settings.get("auth").ok_or_else(|| {
-            AppError::Config(format!("供应商 {provider_id} 的 Codex 配置缺少 auth 字段"))
+            AppError::Config(format!(
+                "供应商 {provider_id} 的 {label} 配置缺少 auth 字段"
+            ))
         })?;
         if !auth.is_object() {
             return Err(AppError::Config(format!(
-                "供应商 {provider_id} 的 Codex auth 配置必须是 JSON 对象"
+                "供应商 {provider_id} 的 {label} auth 配置必须是 JSON 对象"
             )));
         }
         let cfg_text = settings.get("config").and_then(Value::as_str);
 
-        crate::codex_config::write_codex_live_atomic_with_stable_provider(auth, cfg_text)?;
+        crate::codex_config::write_codex_like_live_atomic_with_stable_provider(
+            codex_like, auth, cfg_text,
+        )?;
         // 注意：MCP 同步在 v3.7.0 中已通过 McpService 进行，不再在此调用
         // sync_enabled_to_codex 使用旧的 config.mcp.codex 结构，在新架构中为空
         // MCP 的启用/禁用应通过 McpService::toggle_app 进行
 
-        let cfg_text_after = crate::codex_config::read_and_validate_codex_config_text()?;
-        if let Some(manager) = config.get_manager_mut(&AppType::Codex) {
+        let cfg_text_after =
+            crate::codex_config::read_and_validate_codex_like_config_text(codex_like)?;
+        if let Some(manager) = config.get_manager_mut(app_type) {
             if let Some(target) = manager.providers.get_mut(provider_id) {
                 if let Some(obj) = target.settings_config.as_object_mut() {
                     obj.insert(

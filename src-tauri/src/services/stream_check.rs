@@ -250,7 +250,7 @@ impl StreamCheckService {
                 )
                 .await
             }
-            AppType::Codex => {
+            AppType::Codex | AppType::Yukino => {
                 Self::check_codex_stream(
                     &client,
                     &base_url,
@@ -1363,7 +1363,7 @@ impl StreamCheckService {
         match app_type {
             AppType::Claude => Self::extract_env_model(provider, "ANTHROPIC_MODEL")
                 .unwrap_or_else(|| config.claude_model.clone()),
-            AppType::Codex => {
+            AppType::Codex | AppType::Yukino => {
                 Self::extract_codex_model(provider).unwrap_or_else(|| config.codex_model.clone())
             }
             AppType::Gemini => Self::extract_env_model(provider, "GEMINI_MODEL")

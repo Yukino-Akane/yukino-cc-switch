@@ -3,6 +3,7 @@
 //! 提供代理服务器的启动、停止和配置管理
 
 use crate::app_config::AppType;
+use crate::codex_config::CodexLikeApp;
 use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
 use crate::database::Database;
 use crate::provider::Provider;
@@ -129,6 +130,34 @@ impl ProxyService {
         }
     }
 
+    fn codex_like_app_from_app_type(app_type: &AppType) -> Option<CodexLikeApp> {
+        match app_type {
+            AppType::Codex => Some(CodexLikeApp::Codex),
+            AppType::Yukino => Some(CodexLikeApp::Yukino),
+            _ => None,
+        }
+    }
+
+    fn codex_like_proxy_base_url(app: CodexLikeApp, proxy_origin: &str) -> String {
+        let origin = proxy_origin.trim_end_matches('/');
+        match app {
+            CodexLikeApp::Codex => format!("{origin}/v1"),
+            CodexLikeApp::Yukino => format!("{origin}/yukino/v1"),
+        }
+    }
+
+    fn apply_codex_like_takeover_fields(config: &mut Value, proxy_base_url: &str) {
+        if let Some(auth) = config.get_mut("auth").and_then(|v| v.as_object_mut()) {
+            auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
+        } else {
+            config["auth"] = json!({ "OPENAI_API_KEY": PROXY_TOKEN_PLACEHOLDER });
+        }
+
+        let config_str = config.get("config").and_then(|v| v.as_str()).unwrap_or("");
+        let updated_config = Self::update_toml_base_url(config_str, proxy_base_url);
+        config["config"] = json!(updated_config);
+    }
+
     pub async fn sync_claude_live_from_provider_while_proxy_active(
         &self,
         provider: &Provider,
@@ -139,7 +168,7 @@ impl ProxyService {
             provider,
         )
         .map_err(|e| format!("构建 claude 有效配置失败: {e}"))?;
-        let (proxy_url, _) = self.build_proxy_urls().await?;
+        let proxy_url = self.build_proxy_urls().await?;
 
         Self::apply_claude_takeover_fields(&mut effective_settings, &proxy_url);
         self.write_claude_live(&effective_settings)?;
@@ -283,9 +312,16 @@ impl ProxyService {
             .await
             .map(|c| c.enabled)
             .unwrap_or(false);
-        // OpenCode and OpenClaw don't support proxy features, always return false
+        let yukino_enabled = self
+            .db
+            .get_proxy_config_for_app("yukino")
+            .await
+            .map(|c| c.enabled)
+            .unwrap_or(false);
+        // OpenCode, OpenClaw, and Hermes don't support proxy takeover.
         let opencode_enabled = false;
         let openclaw_enabled = false;
+        let hermes_enabled = false;
 
         Ok(ProxyTakeoverStatus {
             claude: claude_enabled,
@@ -293,6 +329,8 @@ impl ProxyService {
             gemini: gemini_enabled,
             opencode: opencode_enabled,
             openclaw: openclaw_enabled,
+            hermes: hermes_enabled,
+            yukino: yukino_enabled,
         })
     }
 
@@ -464,7 +502,11 @@ impl ProxyService {
     async fn sync_live_to_provider(&self, app_type: &AppType) -> Result<(), String> {
         let live_config = match app_type {
             AppType::Claude => self.read_claude_live()?,
-            AppType::Codex => self.read_codex_live()?,
+            AppType::Codex | AppType::Yukino => {
+                let app = Self::codex_like_app_from_app_type(app_type)
+                    .expect("Codex-like app should map from app type");
+                self.read_codex_like_live(app)?
+            }
             AppType::Gemini => self.read_gemini_live()?,
             AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
                 // These apps don't support proxy features
@@ -577,14 +619,16 @@ impl ProxyService {
                     }
                 }
             }
-            AppType::Codex => {
+            AppType::Codex | AppType::Yukino => {
+                let app_type_str = app_type.as_str();
+                let label = app_type.as_str();
                 let provider_id =
-                    crate::settings::get_effective_current_provider(&self.db, &AppType::Codex)
-                        .map_err(|e| format!("获取 Codex 当前供应商失败: {e}"))?;
+                    crate::settings::get_effective_current_provider(&self.db, app_type)
+                        .map_err(|e| format!("获取 {label} 当前供应商失败: {e}"))?;
 
                 if let Some(provider_id) = provider_id {
                     if let Ok(Some(mut provider)) =
-                        self.db.get_provider_by_id(&provider_id, "codex")
+                        self.db.get_provider_by_id(&provider_id, app_type_str)
                     {
                         if let Some(token) = live_config
                             .get("auth")
@@ -611,19 +655,21 @@ impl ProxyService {
                                     );
                                 } else {
                                     log::warn!(
-                                        "Codex provider settings_config 格式异常（非对象），跳过写入 Token (provider: {provider_id})"
+                                        "{label} provider settings_config 格式异常（非对象），跳过写入 Token (provider: {provider_id})"
                                     );
                                 }
                             }
 
                             if let Err(e) = self.db.update_provider_settings_config(
-                                "codex",
+                                app_type_str,
                                 &provider_id,
                                 &provider.settings_config,
                             ) {
-                                log::warn!("同步 Codex Token 到数据库失败: {e}");
+                                log::warn!("同步 {label} Token 到数据库失败: {e}");
                             } else {
-                                log::info!("已同步 Codex Token 到数据库 (provider: {provider_id})");
+                                log::info!(
+                                    "已同步 {label} Token 到数据库 (provider: {provider_id})"
+                                );
                             }
                         }
                     }
@@ -702,6 +748,11 @@ impl ProxyService {
                 .await?;
         }
 
+        if let Ok(live_config) = self.read_codex_like_live(CodexLikeApp::Yukino) {
+            self.sync_live_config_to_provider(&AppType::Yukino, &live_config)
+                .await?;
+        }
+
         if let Ok(live_config) = self.read_gemini_live() {
             self.sync_live_config_to_provider(&AppType::Gemini, &live_config)
                 .await?;
@@ -759,7 +810,7 @@ impl ProxyService {
             .map_err(|e| format!("清除接管状态失败: {e}"))?;
 
         // 4. 清除所有应用的 enabled 状态（用户手动关闭，不需要下次自动恢复）
-        for app_type in ["claude", "codex", "gemini"] {
+        for app_type in ["claude", "codex", "gemini", "yukino"] {
             if let Ok(mut config) = self.db.get_proxy_config_for_app(app_type).await {
                 if config.enabled {
                     config.enabled = false;
@@ -844,6 +895,16 @@ impl ProxyService {
                 .map_err(|e| format!("备份 Codex 配置失败: {e}"))?;
         }
 
+        // Yukino
+        if let Ok(config) = self.read_codex_like_live(CodexLikeApp::Yukino) {
+            let json_str = serde_json::to_string(&config)
+                .map_err(|e| format!("序列化 Yukino 配置失败: {e}"))?;
+            self.db
+                .save_live_backup("yukino", &json_str)
+                .await
+                .map_err(|e| format!("备份 Yukino 配置失败: {e}"))?;
+        }
+
         // Gemini
         if let Ok(config) = self.read_gemini_live() {
             let json_str = serde_json::to_string(&config)
@@ -862,7 +923,11 @@ impl ProxyService {
     async fn backup_live_config_strict(&self, app_type: &AppType) -> Result<(), String> {
         let (app_type_str, config) = match app_type {
             AppType::Claude => ("claude", self.read_claude_live()?),
-            AppType::Codex => ("codex", self.read_codex_live()?),
+            AppType::Codex | AppType::Yukino => {
+                let codex_like = Self::codex_like_app_from_app_type(app_type)
+                    .expect("Codex-like app should map from app type");
+                (app_type.as_str(), self.read_codex_like_live(codex_like)?)
+            }
             AppType::Gemini => ("gemini", self.read_gemini_live()?),
             AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
                 // These apps don't support proxy features
@@ -881,7 +946,7 @@ impl ProxyService {
     }
 
     /// 构造写入 Live 的代理地址（处理 0.0.0.0 / IPv6 等特殊情况）
-    async fn build_proxy_urls(&self) -> Result<(String, String), String> {
+    async fn build_proxy_urls(&self) -> Result<String, String> {
         let config = self
             .db
             .get_proxy_config()
@@ -902,10 +967,8 @@ impl ProxyService {
         };
 
         let proxy_origin = format!("http://{}:{}", connect_host_for_url, config.listen_port);
-        let proxy_url = proxy_origin.clone();
-        let proxy_codex_base_url = format!("{}/v1", proxy_origin.trim_end_matches('/'));
 
-        Ok((proxy_url, proxy_codex_base_url))
+        Ok(proxy_origin)
     }
 
     /// 接管各应用的 Live 配置（写入代理地址）
@@ -917,7 +980,7 @@ impl ProxyService {
     ///
     /// 因此不需要在 URL 中添加应用前缀。
     async fn takeover_live_configs(&self) -> Result<(), String> {
-        let (proxy_url, proxy_codex_base_url) = self.build_proxy_urls().await?;
+        let proxy_url = self.build_proxy_urls().await?;
 
         // Claude: 修改 ANTHROPIC_BASE_URL，使用占位符替代真实 Token（代理会注入真实 Token）
         if let Ok(mut live_config) = self.read_claude_live() {
@@ -928,21 +991,18 @@ impl ProxyService {
 
         // Codex: 修改 config.toml 的 base_url，auth.json 的 OPENAI_API_KEY（代理会注入真实 Token）
         if let Ok(mut live_config) = self.read_codex_live() {
-            // 1. 修改 auth.json 中的 OPENAI_API_KEY（使用占位符）
-            if let Some(auth) = live_config.get_mut("auth").and_then(|v| v.as_object_mut()) {
-                auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
-            }
-
-            // 2. 修改 config.toml 中的 base_url
-            let config_str = live_config
-                .get("config")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let updated_config = Self::update_toml_base_url(config_str, &proxy_codex_base_url);
-            live_config["config"] = json!(updated_config);
-
+            let base_url = Self::codex_like_proxy_base_url(CodexLikeApp::Codex, &proxy_url);
+            Self::apply_codex_like_takeover_fields(&mut live_config, &base_url);
             self.write_codex_live(&live_config)?;
-            log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
+            log::info!("Codex Live 配置已接管，代理地址: {base_url}");
+        }
+
+        // Yukino: Codex-compatible protocol, separate live config and route prefix.
+        if let Ok(mut live_config) = self.read_codex_like_live(CodexLikeApp::Yukino) {
+            let base_url = Self::codex_like_proxy_base_url(CodexLikeApp::Yukino, &proxy_url);
+            Self::apply_codex_like_takeover_fields(&mut live_config, &base_url);
+            self.write_codex_like_live(CodexLikeApp::Yukino, &live_config)?;
+            log::info!("Yukino Live 配置已接管，代理地址: {base_url}");
         }
 
         // Gemini: 修改 GOOGLE_GEMINI_BASE_URL，使用占位符替代真实 Token（代理会注入真实 Token）
@@ -966,7 +1026,7 @@ impl ProxyService {
 
     /// 接管指定应用的 Live 配置（严格模式：目标配置不存在则返回错误）
     async fn takeover_live_config_strict(&self, app_type: &AppType) -> Result<(), String> {
-        let (proxy_url, proxy_codex_base_url) = self.build_proxy_urls().await?;
+        let proxy_url = self.build_proxy_urls().await?;
 
         match app_type {
             AppType::Claude => {
@@ -975,22 +1035,17 @@ impl ProxyService {
                 self.write_claude_live(&live_config)?;
                 log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
             }
-            AppType::Codex => {
-                let mut live_config = self.read_codex_live()?;
-
-                if let Some(auth) = live_config.get_mut("auth").and_then(|v| v.as_object_mut()) {
-                    auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
-                }
-
-                let config_str = live_config
-                    .get("config")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let updated_config = Self::update_toml_base_url(config_str, &proxy_codex_base_url);
-                live_config["config"] = json!(updated_config);
-
-                self.write_codex_live(&live_config)?;
-                log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
+            AppType::Codex | AppType::Yukino => {
+                let codex_like = Self::codex_like_app_from_app_type(app_type)
+                    .expect("Codex-like app should map from app type");
+                let mut live_config = self.read_codex_like_live(codex_like)?;
+                let base_url = Self::codex_like_proxy_base_url(codex_like, &proxy_url);
+                Self::apply_codex_like_takeover_fields(&mut live_config, &base_url);
+                self.write_codex_like_live(codex_like, &live_config)?;
+                log::info!(
+                    "{} Live 配置已接管，代理地址: {base_url}",
+                    codex_like.label()
+                );
             }
             AppType::Gemini => {
                 let mut live_config = self.read_gemini_live()?;
@@ -1019,7 +1074,7 @@ impl ProxyService {
 
     /// 接管指定应用的 Live 配置（尽力而为：配置不存在/读取失败则跳过）
     async fn takeover_live_config_best_effort(&self, app_type: &AppType) -> Result<(), String> {
-        let (proxy_url, proxy_codex_base_url) = self.build_proxy_urls().await?;
+        let proxy_url = self.build_proxy_urls().await?;
 
         match app_type {
             AppType::Claude => {
@@ -1028,22 +1083,13 @@ impl ProxyService {
                     let _ = self.write_claude_live(&live_config);
                 }
             }
-            AppType::Codex => {
-                if let Ok(mut live_config) = self.read_codex_live() {
-                    if let Some(auth) = live_config.get_mut("auth").and_then(|v| v.as_object_mut())
-                    {
-                        auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
+            AppType::Codex | AppType::Yukino => {
+                if let Some(codex_like) = Self::codex_like_app_from_app_type(app_type) {
+                    if let Ok(mut live_config) = self.read_codex_like_live(codex_like) {
+                        let base_url = Self::codex_like_proxy_base_url(codex_like, &proxy_url);
+                        Self::apply_codex_like_takeover_fields(&mut live_config, &base_url);
+                        let _ = self.write_codex_like_live(codex_like, &live_config);
                     }
-
-                    let config_str = live_config
-                        .get("config")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let updated_config =
-                        Self::update_toml_base_url(config_str, &proxy_codex_base_url);
-                    live_config["config"] = json!(updated_config);
-
-                    let _ = self.write_codex_live(&live_config);
                 }
             }
             AppType::Gemini => {
@@ -1093,6 +1139,14 @@ impl ProxyService {
                     log::info!("Codex Live 配置已恢复");
                 }
             }
+            AppType::Yukino => {
+                if let Ok(Some(backup)) = self.db.get_live_backup("yukino").await {
+                    let config: Value = serde_json::from_str(&backup.original_config)
+                        .map_err(|e| format!("解析 Yukino 备份失败: {e}"))?;
+                    self.write_codex_like_live(CodexLikeApp::Yukino, &config)?;
+                    log::info!("Yukino Live 配置已恢复");
+                }
+            }
             AppType::Gemini => {
                 if let Ok(Some(backup)) = self.db.get_live_backup("gemini").await {
                     let config: Value = serde_json::from_str(&backup.original_config)
@@ -1113,7 +1167,12 @@ impl ProxyService {
     async fn restore_live_configs(&self) -> Result<(), String> {
         let mut errors = Vec::new();
 
-        for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
+        for app_type in [
+            AppType::Claude,
+            AppType::Codex,
+            AppType::Gemini,
+            AppType::Yukino,
+        ] {
             if let Err(e) = self
                 .restore_live_config_for_app_with_fallback(&app_type)
                 .await
@@ -1190,7 +1249,11 @@ impl ProxyService {
     fn write_live_config_for_app(&self, app_type: &AppType, config: &Value) -> Result<(), String> {
         match app_type {
             AppType::Claude => self.write_claude_live(config),
-            AppType::Codex => self.write_codex_live(config),
+            AppType::Codex | AppType::Yukino => {
+                let codex_like = Self::codex_like_app_from_app_type(app_type)
+                    .expect("Codex-like app should map from app type");
+                self.write_codex_like_live(codex_like, config)
+            }
             AppType::Gemini => self.write_gemini_live(config),
             AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
                 // These apps don't support proxy features
@@ -1205,10 +1268,14 @@ impl ProxyService {
                 Ok(config) => Self::is_claude_live_taken_over(&config),
                 Err(_) => false,
             },
-            AppType::Codex => match self.read_codex_live() {
-                Ok(config) => Self::is_codex_live_taken_over(&config),
-                Err(_) => false,
-            },
+            AppType::Codex | AppType::Yukino => {
+                let codex_like = Self::codex_like_app_from_app_type(app_type)
+                    .expect("Codex-like app should map from app type");
+                match self.read_codex_like_live(codex_like) {
+                    Ok(config) => Self::is_codex_live_taken_over(&config),
+                    Err(_) => false,
+                }
+            }
             AppType::Gemini => match self.read_gemini_live() {
                 Ok(config) => Self::is_gemini_live_taken_over(&config),
                 Err(_) => false,
@@ -1254,7 +1321,11 @@ impl ProxyService {
     ) -> Result<(), String> {
         match app_type {
             AppType::Claude => self.cleanup_claude_takeover_placeholders_in_live(),
-            AppType::Codex => self.cleanup_codex_takeover_placeholders_in_live(),
+            AppType::Codex | AppType::Yukino => {
+                let codex_like = Self::codex_like_app_from_app_type(app_type)
+                    .expect("Codex-like app should map from app type");
+                self.cleanup_codex_like_takeover_placeholders_in_live(codex_like)
+            }
             AppType::Gemini => self.cleanup_gemini_takeover_placeholders_in_live(),
             AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
                 // These apps don't support proxy features
@@ -1309,8 +1380,11 @@ impl ProxyService {
         Ok(())
     }
 
-    fn cleanup_codex_takeover_placeholders_in_live(&self) -> Result<(), String> {
-        let mut config = self.read_codex_live()?;
+    fn cleanup_codex_like_takeover_placeholders_in_live(
+        &self,
+        app: CodexLikeApp,
+    ) -> Result<(), String> {
+        let mut config = self.read_codex_like_live(app)?;
 
         if let Some(auth) = config.get_mut("auth").and_then(|v| v.as_object_mut()) {
             if auth.get("OPENAI_API_KEY").and_then(|v| v.as_str()) == Some(PROXY_TOKEN_PLACEHOLDER)
@@ -1324,7 +1398,7 @@ impl ProxyService {
             config["config"] = json!(updated);
         }
 
-        self.write_codex_live(&config)?;
+        self.write_codex_like_live(app, &config)?;
         Ok(())
     }
 
@@ -1360,7 +1434,7 @@ impl ProxyService {
     /// 检查是否处于 Live 接管模式
     pub async fn is_takeover_active(&self) -> Result<bool, String> {
         let status = self.get_takeover_status().await?;
-        Ok(status.claude || status.codex || status.gemini)
+        Ok(status.claude || status.codex || status.gemini || status.yukino)
     }
 
     /// 从异常退出中恢复（启动时调用）
@@ -1399,6 +1473,12 @@ impl ProxyService {
         }
 
         if let Ok(config) = self.read_codex_live() {
+            if Self::is_codex_live_taken_over(&config) {
+                return true;
+            }
+        }
+
+        if let Ok(config) = self.read_codex_like_live(CodexLikeApp::Yukino) {
             if Self::is_codex_live_taken_over(&config) {
                 return true;
             }
@@ -1475,7 +1555,7 @@ impl ProxyService {
             build_effective_settings_with_common_config(self.db.as_ref(), &app_type_enum, provider)
                 .map_err(|e| format!("构建 {app_type} 有效配置失败: {e}"))?;
 
-        if matches!(app_type_enum, AppType::Codex) {
+        if matches!(app_type_enum, AppType::Codex | AppType::Yukino) {
             let existing_backup_value = self
                 .db
                 .get_live_backup(app_type)
@@ -1498,18 +1578,21 @@ impl ProxyService {
                 .as_ref()
                 .and_then(|value| value.get("config"))
                 .and_then(|value| value.as_str());
-            crate::codex_config::normalize_codex_settings_config_model_provider(
+            let codex_like = Self::codex_like_app_from_app_type(&app_type_enum)
+                .expect("Codex-like app should map from app type");
+            crate::codex_config::normalize_codex_like_settings_config_model_provider(
+                codex_like,
                 &mut effective_settings,
                 anchor_config_text,
             )
-            .map_err(|e| format!("归一化 Codex restore backup 失败: {e}"))?;
+            .map_err(|e| format!("归一化 {app_type} restore backup 失败: {e}"))?;
         }
 
         let backup_json = match app_type_enum {
             AppType::Claude => serde_json::to_string(&effective_settings)
                 .map_err(|e| format!("序列化 Claude 配置失败: {e}"))?,
-            AppType::Codex => serde_json::to_string(&effective_settings)
-                .map_err(|e| format!("序列化 Codex 配置失败: {e}"))?,
+            AppType::Codex | AppType::Yukino => serde_json::to_string(&effective_settings)
+                .map_err(|e| format!("序列化 {app_type} 配置失败: {e}"))?,
             AppType::Gemini => {
                 // Gemini takeover 仅修改 .env；settings.json（含 mcpServers）保持原样。
                 let env_backup = if let Some(env) = effective_settings.get("env") {
@@ -1730,20 +1813,24 @@ impl ProxyService {
     }
 
     fn read_codex_live(&self) -> Result<Value, String> {
-        use crate::codex_config::{get_codex_auth_path, get_codex_config_path};
+        self.read_codex_like_live(CodexLikeApp::Codex)
+    }
 
-        let auth_path = get_codex_auth_path();
+    fn read_codex_like_live(&self, app: CodexLikeApp) -> Result<Value, String> {
+        use crate::codex_config::{get_codex_like_auth_path, get_codex_like_config_path};
+
+        let auth_path = get_codex_like_auth_path(app);
         if !auth_path.exists() {
-            return Err("Codex auth.json 不存在".to_string());
+            return Err(format!("{} auth.json 不存在", app.label()));
         }
 
-        let auth: Value =
-            read_json_file(&auth_path).map_err(|e| format!("读取 Codex auth 失败: {e}"))?;
+        let auth: Value = read_json_file(&auth_path)
+            .map_err(|e| format!("读取 {} auth 失败: {e}", app.label()))?;
 
-        let config_path = get_codex_config_path();
+        let config_path = get_codex_like_config_path(app);
         let config_str = if config_path.exists() {
             std::fs::read_to_string(&config_path)
-                .map_err(|e| format!("读取 Codex config 失败: {e}"))?
+                .map_err(|e| format!("读取 {} config 失败: {e}", app.label()))?
         } else {
             String::new()
         };
@@ -1755,8 +1842,12 @@ impl ProxyService {
     }
 
     fn write_codex_live(&self, config: &Value) -> Result<(), String> {
+        self.write_codex_like_live(CodexLikeApp::Codex, config)
+    }
+
+    fn write_codex_like_live(&self, app: CodexLikeApp, config: &Value) -> Result<(), String> {
         use crate::codex_config::{
-            get_codex_auth_path, get_codex_config_path, write_codex_live_atomic,
+            get_codex_like_auth_path, get_codex_like_config_path, write_codex_like_live_atomic,
         };
 
         let auth = config.get("auth");
@@ -1765,17 +1856,17 @@ impl ProxyService {
         // Proxy restore writes saved live backups verbatim. Provider-driven writes go
         // through write_live_with_common_config(), which normalizes Codex provider ids.
         match (auth, config_str) {
-            (Some(auth), Some(cfg)) => write_codex_live_atomic(auth, Some(cfg))
-                .map_err(|e| format!("写入 Codex 配置失败: {e}"))?,
+            (Some(auth), Some(cfg)) => write_codex_like_live_atomic(app, auth, Some(cfg))
+                .map_err(|e| format!("写入 {} 配置失败: {e}", app.label()))?,
             (Some(auth), None) => {
-                let auth_path = get_codex_auth_path();
+                let auth_path = get_codex_like_auth_path(app);
                 write_json_file(&auth_path, auth)
-                    .map_err(|e| format!("写入 Codex auth 失败: {e}"))?;
+                    .map_err(|e| format!("写入 {} auth 失败: {e}", app.label()))?;
             }
             (None, Some(cfg)) => {
-                let config_path = get_codex_config_path();
+                let config_path = get_codex_like_config_path(app);
                 crate::config::write_text_file(&config_path, cfg)
-                    .map_err(|e| format!("写入 Codex config 失败: {e}"))?;
+                    .map_err(|e| format!("写入 {} config 失败: {e}", app.label()))?;
             }
             (None, None) => {}
         }
@@ -1889,6 +1980,11 @@ impl ProxyService {
                 }
                 if takeover.gemini {
                     self.takeover_live_config_best_effort(&AppType::Gemini)
+                        .await?;
+                    updated_any = true;
+                }
+                if takeover.yukino {
+                    self.takeover_live_config_best_effort(&AppType::Yukino)
                         .await?;
                     updated_any = true;
                 }

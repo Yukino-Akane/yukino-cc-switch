@@ -9,7 +9,9 @@ use toml_edit::{DocumentMut, Item, TableLike};
 
 use crate::app_config::AppType;
 use crate::codex_config::{
-    get_codex_auth_path, get_codex_config_path, write_codex_live_atomic_with_stable_provider,
+    get_codex_auth_path, get_codex_config_path, get_codex_like_auth_path,
+    read_and_validate_codex_like_config_text, write_codex_like_live_atomic_with_stable_provider,
+    CodexLikeApp,
 };
 use crate::config::{delete_file, get_claude_settings_path, read_json_file, write_json_file};
 use crate::database::Database;
@@ -319,7 +321,7 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
             Ok(source) if source.is_object() => json_is_subset(settings, &source),
             _ => false,
         },
-        AppType::Codex => {
+        AppType::Codex | AppType::Yukino => {
             let config_toml = settings.get("config").and_then(Value::as_str).unwrap_or("");
             if config_toml.trim().is_empty() {
                 return false;
@@ -388,7 +390,7 @@ pub(crate) fn remove_common_config_from_settings(
             json_deep_remove(&mut result, &source);
             Ok(result)
         }
-        AppType::Codex => {
+        AppType::Codex | AppType::Yukino => {
             let mut result = settings.clone();
             let config_toml = settings.get("config").and_then(Value::as_str).unwrap_or("");
             let mut target_doc = if config_toml.trim().is_empty() {
@@ -441,7 +443,7 @@ fn apply_common_config_to_settings(
             json_deep_merge(&mut result, &source);
             Ok(result)
         }
-        AppType::Codex => {
+        AppType::Codex | AppType::Yukino => {
             let mut result = settings.clone();
             let config_toml = settings.get("config").and_then(Value::as_str).unwrap_or("");
             let mut target_doc = if config_toml.trim().is_empty() {
@@ -563,7 +565,7 @@ fn restore_live_settings_for_provider_backfill(
     provider: &Provider,
     live_settings: Value,
 ) -> Value {
-    if !matches!(app_type, AppType::Codex) {
+    if !matches!(app_type, AppType::Codex | AppType::Yukino) {
         return live_settings;
     }
 
@@ -579,6 +581,36 @@ fn restore_live_settings_for_provider_backfill(
     }
 
     settings
+}
+
+fn codex_like_app_from_app_type(app_type: &AppType) -> Option<CodexLikeApp> {
+    match app_type {
+        AppType::Codex => Some(CodexLikeApp::Codex),
+        AppType::Yukino => Some(CodexLikeApp::Yukino),
+        _ => None,
+    }
+}
+
+fn write_codex_like_provider_live(app_type: &AppType, provider: &Provider) -> Result<(), AppError> {
+    let codex_like = codex_like_app_from_app_type(app_type).ok_or_else(|| {
+        AppError::Config(format!("{} is not Codex-compatible", app_type.as_str()))
+    })?;
+    let label = codex_like.label();
+    let obj = provider.settings_config.as_object().ok_or_else(|| {
+        AppError::Config(format!(
+            "{label} provider configuration must be a JSON object"
+        ))
+    })?;
+    let auth = obj.get("auth").ok_or_else(|| {
+        AppError::Config(format!("{label} provider configuration is missing 'auth'"))
+    })?;
+    let config_str = obj.get("config").and_then(|v| v.as_str()).ok_or_else(|| {
+        AppError::Config(format!(
+            "{label} provider configuration is missing string 'config'"
+        ))
+    })?;
+
+    write_codex_like_live_atomic_with_stable_provider(codex_like, auth, Some(config_str))
 }
 
 pub(crate) fn normalize_provider_common_config_for_storage(
@@ -699,20 +731,7 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             let settings = sanitize_claude_settings_for_live(&provider.settings_config);
             write_json_file(&path, &settings)?;
         }
-        AppType::Codex => {
-            let obj = provider
-                .settings_config
-                .as_object()
-                .ok_or_else(|| AppError::Config("Codex 供应商配置必须是 JSON 对象".to_string()))?;
-            let auth = obj
-                .get("auth")
-                .ok_or_else(|| AppError::Config("Codex 供应商配置缺少 'auth' 字段".to_string()))?;
-            let config_str = obj.get("config").and_then(|v| v.as_str()).ok_or_else(|| {
-                AppError::Config("Codex 供应商配置缺少 'config' 字段或不是字符串".to_string())
-            })?;
-
-            write_codex_live_atomic_with_stable_provider(auth, Some(config_str))?;
-        }
+        AppType::Codex | AppType::Yukino => write_codex_like_provider_live(app_type, provider)?,
         AppType::Gemini => {
             // Delegate to write_gemini_live which handles env file writing correctly
             write_gemini_live(provider)?;
@@ -929,17 +948,19 @@ pub fn sync_current_to_live(state: &AppState) -> Result<(), AppError> {
 /// Read current live settings for an app type
 pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
     match app_type {
-        AppType::Codex => {
-            let auth_path = get_codex_auth_path();
+        AppType::Codex | AppType::Yukino => {
+            let codex_like = codex_like_app_from_app_type(&app_type).expect("codex-like app");
+            let label = codex_like.label();
+            let auth_path = get_codex_like_auth_path(codex_like);
             if !auth_path.exists() {
                 return Err(AppError::localized(
                     "codex.auth.missing",
-                    "Codex 配置文件不存在：缺少 auth.json",
-                    "Codex configuration missing: auth.json not found",
+                    format!("{label} 配置文件不存在：缺少 auth.json"),
+                    format!("{label} configuration missing: auth.json not found"),
                 ));
             }
             let auth: Value = read_json_file(&auth_path)?;
-            let cfg_text = crate::codex_config::read_and_validate_codex_config_text()?;
+            let cfg_text = read_and_validate_codex_like_config_text(codex_like)?;
             Ok(json!({ "auth": auth, "config": cfg_text }))
         }
         AppType::Claude => {
@@ -1052,17 +1073,19 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
     }
 
     let settings_config = match app_type {
-        AppType::Codex => {
-            let auth_path = get_codex_auth_path();
+        AppType::Codex | AppType::Yukino => {
+            let codex_like = codex_like_app_from_app_type(&app_type).expect("codex-like app");
+            let label = codex_like.label();
+            let auth_path = get_codex_like_auth_path(codex_like);
             if !auth_path.exists() {
                 return Err(AppError::localized(
                     "codex.live.missing",
-                    "Codex 配置文件不存在",
-                    "Codex configuration file is missing",
+                    format!("{label} 配置文件不存在"),
+                    format!("{label} configuration file is missing"),
                 ));
             }
             let auth: Value = read_json_file(&auth_path)?;
-            let config_str = crate::codex_config::read_and_validate_codex_config_text()?;
+            let config_str = read_and_validate_codex_like_config_text(codex_like)?;
             json!({ "auth": auth, "config": config_str })
         }
         AppType::Claude => {

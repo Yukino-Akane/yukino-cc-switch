@@ -50,7 +50,7 @@ fn validate_common_config_snippet(app_type: &str, snippet: &str) -> Result<(), S
             serde_json::from_str::<serde_json::Value>(snippet)
                 .map_err(invalid_json_format_error)?;
         }
-        "codex" => {
+        "codex" | "yukino" => {
             snippet
                 .parse::<toml_edit::DocumentMut>()
                 .map_err(invalid_toml_format_error)?;
@@ -110,6 +110,15 @@ pub async fn get_config_status(app: String) -> Result<ConfigStatus, String> {
 
             Ok(ConfigStatus { exists, path })
         }
+        AppType::Yukino => {
+            let auth_path = crate::yukino_config::get_yukino_auth_path();
+            let exists = auth_path.exists();
+            let path = crate::yukino_config::get_yukino_dir()
+                .to_string_lossy()
+                .to_string();
+
+            Ok(ConfigStatus { exists, path })
+        }
     }
 }
 
@@ -127,6 +136,7 @@ pub async fn get_config_dir(app: String) -> Result<String, String> {
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
         AppType::Hermes => crate::hermes_config::get_hermes_dir(),
+        AppType::Yukino => crate::yukino_config::get_yukino_dir(),
     };
 
     Ok(dir.to_string_lossy().to_string())
@@ -141,6 +151,7 @@ pub async fn open_config_folder(handle: AppHandle, app: String) -> Result<bool, 
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
         AppType::Hermes => crate::hermes_config::get_hermes_dir(),
+        AppType::Yukino => crate::yukino_config::get_yukino_dir(),
     };
 
     if !config_dir.exists() {
@@ -269,7 +280,7 @@ pub async fn set_common_config_snippet(
 
     let value = if is_cleared { None } else { Some(snippet) };
 
-    if matches!(app_type.as_str(), "claude" | "codex" | "gemini") {
+    if matches!(app_type.as_str(), "claude" | "codex" | "gemini" | "yukino") {
         if let Some(legacy_snippet) = old_snippet
             .as_deref()
             .filter(|value| !value.trim().is_empty())
@@ -293,7 +304,7 @@ pub async fn set_common_config_snippet(
         .set_config_snippet_cleared(&app_type, is_cleared)
         .map_err(|e| e.to_string())?;
 
-    if matches!(app_type.as_str(), "claude" | "codex" | "gemini") {
+    if matches!(app_type.as_str(), "claude" | "codex" | "gemini" | "yukino") {
         let app = AppType::from_str(&app_type).map_err(|e| e.to_string())?;
         crate::services::provider::ProviderService::sync_current_provider_for_app(
             state.inner(),

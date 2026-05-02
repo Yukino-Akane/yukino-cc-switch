@@ -116,6 +116,11 @@ impl McpService {
                 // Codex uses TOML format, must use the correct function
                 mcp::sync_single_server_to_codex(&Default::default(), &server.id, &server.server)?;
             }
+            AppType::Yukino => {
+                // Yukino uses Codex-compatible MCP TOML, but must write to ~/.yukino.
+                // The Yukino-specific MCP path is introduced in the dedicated MCP task.
+                log::debug!("Yukino MCP sync is deferred until Yukino home support is initialized");
+            }
             AppType::Gemini => {
                 mcp::sync_single_server_to_gemini(&Default::default(), &server.id, &server.server)?;
             }
@@ -155,6 +160,11 @@ impl McpService {
         match app {
             AppType::Claude => mcp::remove_server_from_claude(id)?,
             AppType::Codex => mcp::remove_server_from_codex(id)?,
+            AppType::Yukino => {
+                log::debug!(
+                    "Yukino MCP removal is deferred until Yukino home support is initialized"
+                );
+            }
             AppType::Gemini => mcp::remove_server_from_gemini(id)?,
             AppType::OpenCode => {
                 mcp::remove_server_from_opencode(id)?;

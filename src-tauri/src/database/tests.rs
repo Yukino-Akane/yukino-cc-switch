@@ -3,7 +3,7 @@
 //! 包含 Schema 迁移和基本功能的测试。
 
 use super::*;
-use crate::app_config::MultiAppConfig;
+use crate::app_config::{InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
 use crate::provider::{Provider, ProviderManager};
 use indexmap::IndexMap;
 use rusqlite::{params, Connection};
@@ -380,7 +380,7 @@ fn schema_create_tables_repairs_legacy_proxy_config_singleton_to_per_app() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM proxy_config", [], |r| r.get(0))
         .expect("count rows");
-    assert_eq!(count, 3, "per-app proxy_config should have 3 rows");
+    assert_eq!(count, 4, "per-app proxy_config should have 4 rows");
 
     // 新结构下应能按 app_type 查询
     let _: i32 = conn
@@ -516,17 +516,84 @@ fn migration_from_v3_8_schema_v1_to_current_schema_v3() {
         "skills migration snapshot should preserve legacy app mapping"
     );
 
-    // v3.9+ 新增：proxy_config 三行 seed 必须存在（否则 UI 会查不到默认值）
+    // v3.9+ 新增：proxy_config per-app seed 必须存在（否则 UI 会查不到默认值）
     let proxy_rows: i64 = conn
         .query_row("SELECT COUNT(*) FROM proxy_config", [], |r| r.get(0))
         .expect("count proxy_config rows");
-    assert_eq!(proxy_rows, 3);
+    assert_eq!(proxy_rows, 4);
 
     // model_pricing 应具备默认数据（迁移时会 seed）
     let pricing_rows: i64 = conn
         .query_row("SELECT COUNT(*) FROM model_pricing", [], |r| r.get(0))
         .expect("count model_pricing rows");
     assert!(pricing_rows > 0, "model_pricing should be seeded");
+}
+
+#[test]
+fn migration_v11_adds_yukino_columns_and_proxy_config() {
+    let conn = Connection::open_in_memory().expect("open memory db");
+    Database::create_tables_on_conn(&conn).expect("create tables");
+    Database::set_user_version(&conn, 10).expect("set version");
+
+    Database::apply_schema_migrations_on_conn(&conn).expect("apply migration");
+
+    assert!(Database::has_column(&conn, "skills", "enabled_yukino").unwrap());
+    assert!(Database::has_column(&conn, "mcp_servers", "enabled_yukino").unwrap());
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM proxy_config WHERE app_type = 'yukino'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+
+    let version: i32 = conn
+        .query_row("PRAGMA user_version;", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+}
+
+#[test]
+fn skill_and_mcp_daos_round_trip_yukino_enabled() {
+    let db = Database::memory().expect("create memory db");
+
+    let mut skill = InstalledSkill {
+        id: "local:test".to_string(),
+        name: "test".to_string(),
+        description: None,
+        directory: "test".to_string(),
+        repo_owner: None,
+        repo_name: None,
+        repo_branch: None,
+        readme_url: None,
+        apps: SkillApps::default(),
+        installed_at: 1,
+        content_hash: None,
+        updated_at: 0,
+    };
+    skill.apps.yukino = true;
+    db.save_skill(&skill).expect("save skill");
+    let loaded = db.get_installed_skill("local:test").unwrap().unwrap();
+    assert!(loaded.apps.yukino);
+
+    let server = McpServer {
+        id: "echo".to_string(),
+        name: "echo".to_string(),
+        server: serde_json::json!({"type":"stdio","command":"echo"}),
+        apps: McpApps {
+            yukino: true,
+            ..Default::default()
+        },
+        description: None,
+        homepage: None,
+        docs: None,
+        tags: vec![],
+    };
+    db.save_mcp_server(&server).expect("save server");
+    let loaded = db.get_all_mcp_servers().unwrap().remove("echo").unwrap();
+    assert!(loaded.apps.yukino);
 }
 
 #[test]

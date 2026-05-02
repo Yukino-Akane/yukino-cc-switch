@@ -17,6 +17,8 @@ pub struct McpApps {
     pub opencode: bool,
     #[serde(default)]
     pub hermes: bool,
+    #[serde(default)]
+    pub yukino: bool,
 }
 
 impl McpApps {
@@ -29,6 +31,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false, // OpenClaw doesn't support MCP
             AppType::Hermes => self.hermes,
+            AppType::Yukino => self.yukino,
         }
     }
 
@@ -41,6 +44,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {} // OpenClaw doesn't support MCP, ignore
             AppType::Hermes => self.hermes = enabled,
+            AppType::Yukino => self.yukino = enabled,
         }
     }
 
@@ -62,12 +66,20 @@ impl McpApps {
         if self.hermes {
             apps.push(AppType::Hermes);
         }
+        if self.yukino {
+            apps.push(AppType::Yukino);
+        }
         apps
     }
 
     /// 检查是否所有应用都未启用
     pub fn is_empty(&self) -> bool {
-        !self.claude && !self.codex && !self.gemini && !self.opencode && !self.hermes
+        !self.claude
+            && !self.codex
+            && !self.gemini
+            && !self.opencode
+            && !self.hermes
+            && !self.yukino
     }
 }
 
@@ -84,6 +96,8 @@ pub struct SkillApps {
     pub opencode: bool,
     #[serde(default)]
     pub hermes: bool,
+    #[serde(default)]
+    pub yukino: bool,
 }
 
 impl SkillApps {
@@ -95,6 +109,7 @@ impl SkillApps {
             AppType::Gemini => self.gemini,
             AppType::OpenCode => self.opencode,
             AppType::Hermes => self.hermes,
+            AppType::Yukino => self.yukino,
             AppType::OpenClaw => false, // OpenClaw doesn't support Skills
         }
     }
@@ -107,6 +122,7 @@ impl SkillApps {
             AppType::Gemini => self.gemini = enabled,
             AppType::OpenCode => self.opencode = enabled,
             AppType::Hermes => self.hermes = enabled,
+            AppType::Yukino => self.yukino = enabled,
             AppType::OpenClaw => {} // OpenClaw doesn't support Skills, ignore
         }
     }
@@ -129,12 +145,20 @@ impl SkillApps {
         if self.hermes {
             apps.push(AppType::Hermes);
         }
+        if self.yukino {
+            apps.push(AppType::Yukino);
+        }
         apps
     }
 
     /// 检查是否所有应用都未启用
     pub fn is_empty(&self) -> bool {
-        !self.claude && !self.codex && !self.gemini && !self.opencode && !self.hermes
+        !self.claude
+            && !self.codex
+            && !self.gemini
+            && !self.opencode
+            && !self.hermes
+            && !self.yukino
     }
 
     /// 仅启用指定应用（其他应用设为禁用）
@@ -268,6 +292,9 @@ pub struct McpRoot {
     /// Hermes MCP 配置（实际使用 config.yaml）
     #[serde(default, skip_serializing_if = "McpConfig::is_empty")]
     pub hermes: McpConfig,
+    /// Yukino MCP 配置（实际使用 config.toml）
+    #[serde(default, skip_serializing_if = "McpConfig::is_empty")]
+    pub yukino: McpConfig,
 }
 
 impl Default for McpRoot {
@@ -282,6 +309,7 @@ impl Default for McpRoot {
             opencode: McpConfig::default(),
             openclaw: McpConfig::default(),
             hermes: McpConfig::default(),
+            yukino: McpConfig::default(),
         }
     }
 }
@@ -308,6 +336,8 @@ pub struct PromptRoot {
     pub openclaw: PromptConfig,
     #[serde(default)]
     pub hermes: PromptConfig,
+    #[serde(default)]
+    pub yukino: PromptConfig,
 }
 
 use crate::config::{copy_file, get_app_config_dir, get_app_config_path, write_json_file};
@@ -325,6 +355,7 @@ pub enum AppType {
     OpenCode,
     OpenClaw,
     Hermes,
+    Yukino,
 }
 
 impl AppType {
@@ -336,6 +367,7 @@ impl AppType {
             AppType::OpenCode => "opencode",
             AppType::OpenClaw => "openclaw",
             AppType::Hermes => "hermes",
+            AppType::Yukino => "yukino",
         }
     }
 
@@ -359,6 +391,7 @@ impl AppType {
             AppType::OpenCode,
             AppType::OpenClaw,
             AppType::Hermes,
+            AppType::Yukino,
         ]
         .into_iter()
     }
@@ -376,10 +409,11 @@ impl FromStr for AppType {
             "opencode" => Ok(AppType::OpenCode),
             "openclaw" => Ok(AppType::OpenClaw),
             "hermes" => Ok(AppType::Hermes),
+            "yukino" => Ok(AppType::Yukino),
             other => Err(AppError::localized(
                 "unsupported_app",
-                format!("不支持的应用标识: '{other}'。可选值: claude, codex, gemini, opencode, openclaw, hermes。"),
-                format!("Unsupported app id: '{other}'. Allowed: claude, codex, gemini, opencode, openclaw, hermes."),
+                format!("不支持的应用标识: '{other}'。可选值: claude, codex, gemini, opencode, openclaw, hermes, yukino。"),
+                format!("Unsupported app id: '{other}'. Allowed: claude, codex, gemini, opencode, openclaw, hermes, yukino."),
             )),
         }
     }
@@ -405,6 +439,9 @@ pub struct CommonConfigSnippets {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hermes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yukino: Option<String>,
 }
 
 impl CommonConfigSnippets {
@@ -417,6 +454,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode.as_ref(),
             AppType::OpenClaw => self.openclaw.as_ref(),
             AppType::Hermes => self.hermes.as_ref(),
+            AppType::Yukino => self.yukino.as_ref(),
         }
     }
 
@@ -429,6 +467,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode = snippet,
             AppType::OpenClaw => self.openclaw = snippet,
             AppType::Hermes => self.hermes = snippet,
+            AppType::Yukino => self.yukino = snippet,
         }
     }
 }
@@ -471,6 +510,7 @@ impl Default for MultiAppConfig {
         apps.insert("opencode".to_string(), ProviderManager::default());
         apps.insert("openclaw".to_string(), ProviderManager::default());
         apps.insert("hermes".to_string(), ProviderManager::default());
+        apps.insert("yukino".to_string(), ProviderManager::default());
 
         Self {
             version: 2,
@@ -559,6 +599,13 @@ impl MultiAppConfig {
             updated = true;
         }
 
+        if !config.apps.contains_key("yukino") {
+            config
+                .apps
+                .insert("yukino".to_string(), ProviderManager::default());
+            updated = true;
+        }
+
         // 执行 MCP 迁移（v3.6.x → v3.7.0）
         let migrated = config.migrate_mcp_to_unified()?;
         if migrated {
@@ -632,6 +679,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &self.mcp.opencode,
             AppType::OpenClaw => &self.mcp.openclaw,
             AppType::Hermes => &self.mcp.hermes,
+            AppType::Yukino => &self.mcp.yukino,
         }
     }
 
@@ -644,6 +692,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &mut self.mcp.opencode,
             AppType::OpenClaw => &mut self.mcp.openclaw,
             AppType::Hermes => &mut self.mcp.hermes,
+            AppType::Yukino => &mut self.mcp.yukino,
         }
     }
 
@@ -660,6 +709,7 @@ impl MultiAppConfig {
         Self::auto_import_prompt_if_exists(&mut config, AppType::OpenCode)?;
         Self::auto_import_prompt_if_exists(&mut config, AppType::OpenClaw)?;
         Self::auto_import_prompt_if_exists(&mut config, AppType::Hermes)?;
+        Self::auto_import_prompt_if_exists(&mut config, AppType::Yukino)?;
 
         Ok(config)
     }
@@ -682,6 +732,7 @@ impl MultiAppConfig {
             || !self.prompts.opencode.prompts.is_empty()
             || !self.prompts.openclaw.prompts.is_empty()
             || !self.prompts.hermes.prompts.is_empty()
+            || !self.prompts.yukino.prompts.is_empty()
         {
             return Ok(false);
         }
@@ -696,6 +747,7 @@ impl MultiAppConfig {
             AppType::OpenCode,
             AppType::OpenClaw,
             AppType::Hermes,
+            AppType::Yukino,
         ] {
             // 复用已有的单应用导入逻辑
             if Self::auto_import_prompt_if_exists(self, app)? {
@@ -768,6 +820,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &mut config.prompts.opencode.prompts,
             AppType::OpenClaw => &mut config.prompts.openclaw.prompts,
             AppType::Hermes => &mut config.prompts.hermes.prompts,
+            AppType::Yukino => &mut config.prompts.yukino.prompts,
         };
 
         prompts.insert(id, prompt);
@@ -809,6 +862,7 @@ impl MultiAppConfig {
                 AppType::OpenCode => &self.mcp.opencode.servers,
                 AppType::OpenClaw => continue, // OpenClaw MCP is still in development, skip
                 AppType::Hermes => continue,   // Hermes didn't exist in v3.6.x, skip
+                AppType::Yukino => continue,   // Yukino didn't exist in v3.6.x, skip
             };
 
             for (id, entry) in old_servers {
@@ -911,6 +965,7 @@ impl MultiAppConfig {
         self.mcp.claude = McpConfig::default();
         self.mcp.codex = McpConfig::default();
         self.mcp.gemini = McpConfig::default();
+        self.mcp.yukino = McpConfig::default();
 
         Ok(true)
     }
@@ -977,6 +1032,32 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent dir");
         }
         fs::write(path, content).expect("write prompt");
+    }
+
+    #[test]
+    fn app_type_accepts_yukino() {
+        let parsed: AppType = "yukino".parse().expect("parse yukino");
+        assert_eq!(parsed, AppType::Yukino);
+        assert_eq!(parsed.as_str(), "yukino");
+        assert!(AppType::all().any(|app| app == AppType::Yukino));
+    }
+
+    #[test]
+    fn yukino_is_switch_mode() {
+        assert!(!AppType::Yukino.is_additive_mode());
+    }
+
+    #[test]
+    fn skill_and_mcp_apps_support_yukino() {
+        let mut skills = SkillApps::default();
+        skills.set_enabled_for(&AppType::Yukino, true);
+        assert!(skills.is_enabled_for(&AppType::Yukino));
+        assert!(skills.enabled_apps().contains(&AppType::Yukino));
+
+        let mut mcp = McpApps::default();
+        mcp.set_enabled_for(&AppType::Yukino, true);
+        assert!(mcp.is_enabled_for(&AppType::Yukino));
+        assert!(mcp.enabled_apps().contains(&AppType::Yukino));
     }
 
     #[test]

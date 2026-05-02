@@ -196,6 +196,7 @@ pub fn read_codex_like_config_text(app: CodexLikeApp) -> Result<String, AppError
 }
 
 /// 读取 `~/.codex/config.toml`，若不存在返回空字符串
+#[allow(dead_code)]
 pub fn read_codex_config_text() -> Result<String, AppError> {
     read_codex_like_config_text(CodexLikeApp::Codex)
 }
@@ -362,6 +363,7 @@ fn rewrite_codex_profile_model_provider_refs(
 /// provider-specific ids like `rightcode` and `aihubmix` makes history appear to move.
 /// We preserve an existing custom provider id when possible and only rewrite the
 /// live config text that Codex sees at provider-driven write boundaries.
+#[allow(dead_code)]
 pub fn normalize_codex_settings_config_model_provider(
     settings: &mut Value,
     anchor_config_text: Option<&str>,
@@ -506,6 +508,7 @@ pub fn restore_codex_settings_config_model_provider_for_backfill(
 ///
 /// Use this for provider-driven live writes. Keep `write_codex_live_atomic` available
 /// for exact restore/backup paths that must preserve the config text byte-for-byte.
+#[allow(dead_code)]
 pub fn write_codex_live_atomic_with_stable_provider(
     auth: &Value,
     config_text_opt: Option<&str>,

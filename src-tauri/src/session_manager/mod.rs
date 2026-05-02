@@ -4,7 +4,7 @@ pub mod terminal;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use providers::{claude, codex, gemini, hermes, openclaw, opencode};
+use providers::{claude, codex, gemini, hermes, openclaw, opencode, yukino};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,13 +56,14 @@ pub struct DeleteSessionOutcome {
 }
 
 pub fn scan_sessions() -> Vec<SessionMeta> {
-    let (r1, r2, r3, r4, r5, r6) = std::thread::scope(|s| {
+    let (r1, r2, r3, r4, r5, r6, r7) = std::thread::scope(|s| {
         let h1 = s.spawn(codex::scan_sessions);
         let h2 = s.spawn(claude::scan_sessions);
         let h3 = s.spawn(opencode::scan_sessions);
         let h4 = s.spawn(openclaw::scan_sessions);
         let h5 = s.spawn(gemini::scan_sessions);
         let h6 = s.spawn(hermes::scan_sessions);
+        let h7 = s.spawn(yukino::scan_sessions);
         (
             h1.join().unwrap_or_default(),
             h2.join().unwrap_or_default(),
@@ -70,6 +71,7 @@ pub fn scan_sessions() -> Vec<SessionMeta> {
             h4.join().unwrap_or_default(),
             h5.join().unwrap_or_default(),
             h6.join().unwrap_or_default(),
+            h7.join().unwrap_or_default(),
         )
     });
 
@@ -80,6 +82,7 @@ pub fn scan_sessions() -> Vec<SessionMeta> {
     sessions.extend(r4);
     sessions.extend(r5);
     sessions.extend(r6);
+    sessions.extend(r7);
 
     sessions.sort_by(|a, b| {
         let a_ts = a.last_active_at.or(a.created_at).unwrap_or(0);
@@ -107,6 +110,7 @@ pub fn load_messages(provider_id: &str, source_path: &str) -> Result<Vec<Session
         "openclaw" => openclaw::load_messages(path),
         "gemini" => gemini::load_messages(path),
         "hermes" => hermes::load_messages(path),
+        "yukino" => yukino::load_messages(path),
         _ => Err(format!("Unsupported provider: {provider_id}")),
     }
 }
@@ -161,6 +165,7 @@ fn delete_session_with_root(
         "openclaw" => openclaw::delete_session(&validated_root, &validated_source, session_id),
         "gemini" => gemini::delete_session(&validated_root, &validated_source, session_id),
         "hermes" => hermes::delete_session(&validated_root, &validated_source, session_id),
+        "yukino" => yukino::delete_session(&validated_root, &validated_source, session_id),
         _ => Err(format!("Unsupported provider: {provider_id}")),
     }
 }
@@ -173,6 +178,7 @@ fn provider_root(provider_id: &str) -> Result<PathBuf, String> {
         "openclaw" => crate::openclaw_config::get_openclaw_dir().join("agents"),
         "gemini" => crate::gemini_config::get_gemini_dir().join("tmp"),
         "hermes" => crate::hermes_config::get_hermes_dir().join("sessions"),
+        "yukino" => crate::yukino_config::get_yukino_dir().join("sessions"),
         _ => return Err(format!("Unsupported provider: {provider_id}")),
     };
 
@@ -226,7 +232,32 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use std::ffi::OsString;
     use tempfile::tempdir;
+
+    struct TestHomeGuard {
+        previous_test_home: Option<OsString>,
+    }
+
+    impl TestHomeGuard {
+        fn set(path: &Path) -> Self {
+            let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+            std::env::set_var("CC_SWITCH_TEST_HOME", path);
+            let _ = crate::settings::reload_settings();
+            Self { previous_test_home }
+        }
+    }
+
+    impl Drop for TestHomeGuard {
+        fn drop(&mut self) {
+            match &self.previous_test_home {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+            let _ = crate::settings::reload_settings();
+        }
+    }
 
     #[test]
     fn rejects_source_path_outside_provider_root() {
@@ -290,5 +321,75 @@ mod tests {
             outcomes[2].error.as_deref(),
             Some("Session was not deleted")
         );
+    }
+
+    #[test]
+    #[serial]
+    fn scan_sessions_includes_yukino_home_sessions() {
+        let temp = tempdir().expect("tempdir");
+        let _guard = TestHomeGuard::set(temp.path());
+        let session_dir = temp
+            .path()
+            .join(".yukino")
+            .join("sessions")
+            .join("2026")
+            .join("05")
+            .join("02");
+        std::fs::create_dir_all(&session_dir).expect("create session dir");
+        let session_path = session_dir.join("rollout-yukino-session.jsonl");
+        std::fs::write(
+            &session_path,
+            concat!(
+                "{\"timestamp\":\"2026-05-02T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"yukino-session\",\"cwd\":\"/tmp/yukino-project\"}}\n",
+                "{\"timestamp\":\"2026-05-02T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":\"Show Yukino sessions\"}}\n"
+            ),
+        )
+        .expect("write session");
+
+        let sessions = scan_sessions();
+        let yukino_sessions: Vec<_> = sessions
+            .iter()
+            .filter(|session| session.provider_id == "yukino")
+            .collect();
+
+        assert_eq!(yukino_sessions.len(), 1);
+        assert_eq!(yukino_sessions[0].session_id, "yukino-session");
+        assert_eq!(
+            yukino_sessions[0].title.as_deref(),
+            Some("Show Yukino sessions")
+        );
+        assert_eq!(
+            std::path::Path::new(
+                yukino_sessions[0]
+                    .source_path
+                    .as_deref()
+                    .expect("source path")
+            ),
+            session_path.as_path()
+        );
+    }
+
+    #[test]
+    fn load_messages_supports_yukino_codex_jsonl() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("session.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                "{\"timestamp\":\"2026-05-02T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"yukino-session\",\"cwd\":\"/tmp/yukino-project\"}}\n",
+                "{\"timestamp\":\"2026-05-02T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":\"hello yukino\"}}\n",
+                "{\"timestamp\":\"2026-05-02T10:00:02Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"hello back\"}}\n"
+            ),
+        )
+        .expect("write session");
+
+        let messages =
+            load_messages("yukino", path.to_string_lossy().as_ref()).expect("load messages");
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "hello yukino");
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[1].content, "hello back");
     }
 }

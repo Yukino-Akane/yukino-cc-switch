@@ -23,12 +23,20 @@ static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 pub fn scan_sessions() -> Vec<SessionMeta> {
     let root = get_codex_config_dir().join("sessions");
+    scan_sessions_from_root(&root, PROVIDER_ID, "codex")
+}
+
+pub(crate) fn scan_sessions_from_root(
+    root: &Path,
+    provider_id: &str,
+    resume_binary: &str,
+) -> Vec<SessionMeta> {
     let mut files = Vec::new();
-    collect_jsonl_files(&root, &mut files);
+    collect_jsonl_files(root, &mut files);
 
     let mut sessions = Vec::new();
     for path in files {
-        if let Some(meta) = parse_session(&path) {
+        if let Some(meta) = parse_session_with_provider(&path, provider_id, resume_binary) {
             sessions.push(meta);
         }
     }
@@ -104,19 +112,33 @@ pub fn load_messages(path: &Path) -> Result<Vec<SessionMessage>, String> {
 }
 
 pub fn delete_session(_root: &Path, path: &Path, session_id: &str) -> Result<bool, String> {
-    let meta = parse_session(path)
-        .ok_or_else(|| format!("Failed to parse Codex session metadata: {}", path.display()))?;
+    delete_session_for_provider(path, session_id, PROVIDER_ID, "Codex", "codex")
+}
+
+pub(crate) fn delete_session_for_provider(
+    path: &Path,
+    session_id: &str,
+    provider_id: &str,
+    provider_label: &str,
+    resume_binary: &str,
+) -> Result<bool, String> {
+    let meta = parse_session_with_provider(path, provider_id, resume_binary).ok_or_else(|| {
+        format!(
+            "Failed to parse {provider_label} session metadata: {}",
+            path.display()
+        )
+    })?;
 
     if meta.session_id != session_id {
         return Err(format!(
-            "Codex session ID mismatch: expected {session_id}, found {}",
+            "{provider_label} session ID mismatch: expected {session_id}, found {}",
             meta.session_id
         ));
     }
 
     std::fs::remove_file(path).map_err(|e| {
         format!(
-            "Failed to delete Codex session file {}: {e}",
+            "Failed to delete {provider_label} session file {}: {e}",
             path.display()
         )
     })?;
@@ -124,7 +146,16 @@ pub fn delete_session(_root: &Path, path: &Path, session_id: &str) -> Result<boo
     Ok(true)
 }
 
+#[cfg(test)]
 fn parse_session(path: &Path) -> Option<SessionMeta> {
+    parse_session_with_provider(path, PROVIDER_ID, "codex")
+}
+
+pub(crate) fn parse_session_with_provider(
+    path: &Path,
+    provider_id: &str,
+    resume_binary: &str,
+) -> Option<SessionMeta> {
     let (head, tail) = read_head_tail_lines(path, 10, 30).ok()?;
 
     let mut session_id: Option<String> = None;
@@ -233,7 +264,7 @@ fn parse_session(path: &Path) -> Option<SessionMeta> {
     let summary = summary.map(|text| truncate_summary(&text, 160));
 
     Some(SessionMeta {
-        provider_id: PROVIDER_ID.to_string(),
+        provider_id: provider_id.to_string(),
         session_id: session_id.clone(),
         title,
         summary,
@@ -241,7 +272,7 @@ fn parse_session(path: &Path) -> Option<SessionMeta> {
         created_at,
         last_active_at,
         source_path: Some(path.to_string_lossy().to_string()),
-        resume_command: Some(format!("codex resume {session_id}")),
+        resume_command: Some(format!("{resume_binary} resume {session_id}")),
     })
 }
 

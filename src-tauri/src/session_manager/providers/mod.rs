@@ -5,3 +5,4 @@ pub mod hermes;
 pub mod openclaw;
 pub mod opencode;
 mod utils;
+pub mod yukino;

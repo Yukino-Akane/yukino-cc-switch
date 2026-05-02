@@ -13,6 +13,12 @@
 
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [Changelog](CHANGELOG.md)
 
+> **Yukino edition:** this repository is a Yukino-focused derivative of
+> [farion1231/cc-switch](https://github.com/farion1231/cc-switch), distributed
+> under the same MIT License with the original copyright notice preserved.
+> It adds Yukino provider, config, and local proxy support while keeping Yukino
+> runtime state separate from Codex state.
+
 </div>
 
 ## ❤️Sponsor

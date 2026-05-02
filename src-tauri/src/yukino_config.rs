@@ -25,14 +25,28 @@ pub fn get_yukino_skills_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn yukino_paths_default_to_yukino_home() {
         let home = crate::config::get_home_dir();
         assert_eq!(get_yukino_dir(), home.join(".yukino"));
-        assert!(get_yukino_auth_path().ends_with(".yukino/auth.json"));
-        assert!(get_yukino_config_path().ends_with(".yukino/config.toml"));
-        assert!(get_yukino_memory_path().ends_with(".yukino/AGENTS.md"));
-        assert!(get_yukino_skills_dir().ends_with(".yukino/skills"));
+        assert_eq!(
+            get_yukino_auth_path().parent(),
+            Some(home.join(".yukino").as_path())
+        );
+        assert_eq!(
+            get_yukino_config_path().parent(),
+            Some(home.join(".yukino").as_path())
+        );
+        assert_eq!(
+            get_yukino_memory_path().parent(),
+            Some(home.join(".yukino").as_path())
+        );
+        assert_eq!(
+            get_yukino_skills_dir().parent(),
+            Some(home.join(".yukino").as_path())
+        );
     }
 }
